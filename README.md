@@ -238,13 +238,11 @@ Ya se definieron:
 * Transacciones opcionales
 * Reportes simples
 
----
 
 ## Autor
 
-Proyecto desarrollado por Jaime Ivan Quezada Beltran.
+Proyecto desarrollado por Jaime Ivan Quezada Beltran, Alan Olea Batres, Paul Andrés Morales Bejar, Diego Martín Lozano Venegas y Daniel Enrique Flores Sanchez
 
----
 
 ## Nota
 

@@ -1,18 +1,17 @@
-import React, { useEffect, useState } from "react";
+import * as Font from "expo-font";
+import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { LinearGradient } from "expo-linear-gradient";
-import * as Font from "expo-font";
 import {
   ArrowRight,
   Camera,
   CheckCircle,
   Clock,
   Layers,
-  Sparkles,
   TrendingDown,
   TrendingUp,
 } from "lucide-react-native";
+import React, { useEffect, useState } from "react";
 import {
   Pressable,
   SafeAreaView,
@@ -35,50 +34,57 @@ export default function LandingScreen() {
 
       <ScrollView
         style={styles.container}
-        contentContainerStyle={[styles.scrollContent, isDesktop && styles.scrollContentDesktop]}
+        contentContainerStyle={[
+          styles.scrollContent,
+          isDesktop && styles.scrollContentDesktop,
+        ]}
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.glowTwo} />
 
         <Header />
 
-        <View style={[styles.bookLayout, isDesktop && styles.bookLayoutDesktop]}>
+        <View
+          style={[styles.bookLayout, isDesktop && styles.bookLayoutDesktop]}
+        >
           <View style={[styles.bookColumn, isDesktop && styles.bookColumnLeft]}>
             <View style={styles.hero}>
-          <Text style={styles.title}>
-            Claridad para tu <Text style={styles.titleAccent}>dinero.</Text>
-          </Text>
-
-          <Text style={styles.subtitle}>
-            Conoce cuánto gana realmente tu negocio con un simple Check-In.
-            Sin hojas de cálculo complejas.
-          </Text>
-
-          <View style={styles.actions}>
-            <Pressable
-              style={styles.primaryButton}
-              onPress={() => router.push("/register")}
-            >
-              <Text style={styles.primaryButtonText}>
-                Toma el control, empieza el balance
+              <Text style={styles.title}>
+                Claridad para tu <Text style={styles.titleAccent}>dinero.</Text>
               </Text>
-              <ArrowRight size={18} color="#0b9387" />
-            </Pressable>
 
-            <Pressable onPress={() => router.push("/login")}>
-              <Text style={styles.loginLink}>Ya tengo una cuenta</Text>
-            </Pressable>
-          </View>
+              <Text style={styles.subtitle}>
+                Conoce cuánto gana realmente tu negocio con un simple Check-In.
+                Sin hojas de cálculo complejas.
+              </Text>
 
-          <View style={styles.trustRow}>
-            <TrustItem label="Gratis" />
-            <TrustItem label="Sin tarjeta" />
-            <TrustItem label="Simple" />
-          </View>
+              <View style={styles.actions}>
+                <Pressable
+                  style={styles.primaryButton}
+                  onPress={() => router.push("./auth/register")}
+                >
+                  <Text style={styles.primaryButtonText}>
+                    Toma el control, empieza el balance
+                  </Text>
+                  <ArrowRight size={18} color="#0b9387" />
+                </Pressable>
+
+                <Pressable onPress={() => router.push("./auth/login")}>
+                  <Text style={styles.loginLink}>Ya tengo una cuenta</Text>
+                </Pressable>
+              </View>
+
+              <View style={styles.trustRow}>
+                <TrustItem label="Gratis" />
+                <TrustItem label="Sin tarjeta" />
+                <TrustItem label="Simple" />
+              </View>
             </View>
           </View>
 
-          <View style={[styles.bookColumn, isDesktop && styles.bookColumnRight]}>
+          <View
+            style={[styles.bookColumn, isDesktop && styles.bookColumnRight]}
+          >
             <DashboardMockup />
           </View>
         </View>
@@ -119,7 +125,7 @@ export default function LandingScreen() {
 
           <Pressable
             style={styles.primaryButton}
-            onPress={() => router.push("/register")}
+            onPress={() => router.push("./auth/register")}
           >
             <Text style={styles.primaryButtonText}>Empezar gratis</Text>
             <ArrowRight size={18} color="#0b9387" />
@@ -130,7 +136,13 @@ export default function LandingScreen() {
   );
 }
 
-function FinbalanceLogo({ variant = "light", style }: { variant?: "light" | "dark"; style?: any }) {
+function FinbalanceLogo({
+  variant = "light",
+  style,
+}: {
+  variant?: "light" | "dark";
+  style?: any;
+}) {
   const [fontsLoaded, setFontsLoaded] = useState(false);
 
   useEffect(() => {
@@ -155,7 +167,7 @@ function FinbalanceLogo({ variant = "light", style }: { variant?: "light" | "dar
 
   return (
     <View style={[styles.logoContainer, style]}>
-      <View style={[styles.logoBox, { backgroundColor: boxColor }]}> 
+      <View style={[styles.logoBox, { backgroundColor: boxColor }]}>
         {fontsLoaded && (
           <Text
             style={[
@@ -421,9 +433,9 @@ const styles = StyleSheet.create({
 
   bookLayoutDesktop: {
     flexDirection: "row",
-    alignItems: "flex-start",
+    alignItems: "center",
     justifyContent: "space-between",
-    gap: 40,
+    gap: 30,
   },
 
   bookColumn: {
@@ -431,12 +443,13 @@ const styles = StyleSheet.create({
   },
 
   bookColumnLeft: {
-    maxWidth: 520,
+    flex: 1,
+    maxWidth: 480,
   },
 
   bookColumnRight: {
-    flex: 1,
-    minWidth: 520,
+    flex: 1.2,
+    minWidth: 480,
   },
 
   scrollContentDesktop: {
@@ -561,7 +574,6 @@ const styles = StyleSheet.create({
     position: "relative",
     marginBottom: 48,
   },
-
 
   mockupCard: {
     borderRadius: 28,
@@ -724,7 +736,6 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     borderColor: "rgb(45, 52, 75)",
   },
-
 
   floatingTitle: {
     color: "#E6F1EE",

@@ -2,7 +2,6 @@ import React, { useEffect, useState } from "react";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { LinearGradient } from "expo-linear-gradient";
-import * as Font from "expo-font";
 import {
   ArrowRight,
   Camera,
@@ -13,6 +12,7 @@ import {
   TrendingDown,
   TrendingUp,
 } from "lucide-react-native";
+import { FinbalanceLogo } from "../components/FinbalanceLogo";
 import {
   Pressable,
   SafeAreaView,
@@ -57,15 +57,15 @@ export default function LandingScreen() {
           <View style={styles.actions}>
             <Pressable
               style={styles.primaryButton}
-              onPress={() => router.push("/register")}
+              onPress={() => router.push("./auth/register")}
             >
               <Text style={styles.primaryButtonText}>
-                Toma el control, empieza el balance
+                Toma el control, crea tu cuenta
               </Text>
               <ArrowRight size={18} color="#0b9387" />
             </Pressable>
 
-            <Pressable onPress={() => router.push("/login")}>
+            <Pressable onPress={() => router.push("./auth/login")}>
               <Text style={styles.loginLink}>Ya tengo una cuenta</Text>
             </Pressable>
           </View>
@@ -113,13 +113,9 @@ export default function LandingScreen() {
             <Text style={styles.titleAccent}>claridad financiera.</Text>
           </Text>
 
-          <Text style={styles.finalSubtitle}>
-            Empieza gratis. Sin tarjeta de crédito.
-          </Text>
-
           <Pressable
             style={styles.primaryButton}
-            onPress={() => router.push("/register")}
+            onPress={() => router.push("./auth/register")}
           >
             <Text style={styles.primaryButtonText}>Empezar gratis</Text>
             <ArrowRight size={18} color="#0b9387" />
@@ -127,67 +123,6 @@ export default function LandingScreen() {
         </View>
       </ScrollView>
     </SafeAreaView>
-  );
-}
-
-function FinbalanceLogo({ variant = "light", style }: { variant?: "light" | "dark"; style?: any }) {
-  const [fontsLoaded, setFontsLoaded] = useState(false);
-
-  useEffect(() => {
-    async function loadFonts() {
-      try {
-        await Font.loadAsync({
-          ModernRomance: require("../../assets/fonts/Modern Romance.otf"),
-        });
-        setFontsLoaded(true);
-      } catch (e) {
-        console.error("Error loading fonts:", e);
-      }
-    }
-
-    loadFonts();
-  }, []);
-
-  const textColor = variant === "light" ? "#ffffff" : "#0b9387";
-  const darkTextColor = variant === "dark" ? "#0b9387" : "#ffffff";
-  const boxColor = variant === "light" ? "#ffffff" : "#0b9387";
-  const boxTextColor = variant === "light" ? "#0b9387" : "#ffffff";
-
-  return (
-    <View style={[styles.logoContainer, style]}>
-      <View style={[styles.logoBox, { backgroundColor: boxColor }]}> 
-        {fontsLoaded && (
-          <Text
-            style={[
-              styles.logoBoxText,
-              {
-                color: boxTextColor,
-                fontFamily: "ModernRomance",
-                marginLeft: 12,
-                marginTop: 6,
-              },
-            ]}
-          >
-            Fin
-          </Text>
-        )}
-      </View>
-      {fontsLoaded && (
-        <Text
-          style={[
-            styles.logoText,
-            {
-              color: darkTextColor,
-              fontFamily: "ModernRomance",
-              marginLeft: 2,
-              marginTop: 6,
-            },
-          ]}
-        >
-          balance
-        </Text>
-      )}
-    </View>
   );
 }
 
@@ -224,16 +159,7 @@ function DashboardMockup() {
           </View>
         </View>
 
-        <View style={styles.chart}>
-          {chartBars.map((value, index) => (
-            <View key={index} style={styles.chartColumn}>
-              <LinearGradient
-                colors={["#0EAF87", "rgb(255, 255, 255)"]}
-                style={[styles.chartBar, { height: value }]}
-              />
-            </View>
-          ))}
-        </View>
+       
 
         <View style={styles.transactions}>
           <Text style={styles.sectionLabel}>Movimientos recientes</Text>
@@ -263,7 +189,7 @@ function DashboardMockup() {
 
       <View style={styles.floatingBadge}>
         <View>
-          <Text style={styles.floatingTitle}>Completar Check-In</Text>
+          <Text style={styles.floatingTitle}>Ver resumen completo</Text>
         </View>
       </View>
     </View>
@@ -387,27 +313,28 @@ const styles = StyleSheet.create({
   },
 
   logoContainer: {
+    alignSelf: "center",
     flexDirection: "row",
     alignItems: "center",
   },
 
   logoBox: {
-    width: 70,
-    height: 50,
+    width: 90,
+    height: 60,
     borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
   },
 
   logoBoxText: {
-    fontWeight: "600",
-    fontSize: 44,
+    fontWeight: "500",
+    fontSize: 64,
     letterSpacing: 2,
   },
 
   logoText: {
-    fontSize: 44,
-    fontWeight: "600",
+    fontSize: 64,
+    fontWeight: "500",
     letterSpacing: 2,
   },
 
@@ -485,7 +412,7 @@ const styles = StyleSheet.create({
 
   title: {
     color: "#ffffff",
-    paddingTop: 30,
+    paddingTop: 10,
     fontSize: 48,
     lineHeight: 53,
     fontWeight: "900",

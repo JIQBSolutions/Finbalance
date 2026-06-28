@@ -1,6 +1,6 @@
-import React from 'react';
-import { View, StyleSheet, type ViewStyle } from 'react-native';
 import { useFonts } from 'expo-font';
+import { useRouter } from 'expo-router';
+import { Pressable, StyleSheet, View, type ViewStyle } from 'react-native';
 import Svg, { Rect, Text as SvgText } from 'react-native-svg';
 
 export type FinbalanceLogoProps = {
@@ -8,14 +8,23 @@ export type FinbalanceLogoProps = {
   style?: ViewStyle;
   width?: number;
   height?: number;
+  linkToDashboard?: boolean;
 };
 
 export function FinbalanceLogo({
   variant = 'light',
   style,
-  width = 340,
+  width = 250,
   height = 90,
+  linkToDashboard = true,
 }: FinbalanceLogoProps) {
+  const router = useRouter();
+
+  const handlePress = () => {
+    if (linkToDashboard) {
+      router.push('/dashboard/dashboard');
+    }
+  };
   const [fontsLoaded] = useFonts({
     ModernRomance: require('../../assets/fonts/Modern Romance.otf'),
   });
@@ -29,34 +38,46 @@ export function FinbalanceLogo({
     return <View style={style} />;
   }
 
-  return (
-    <View style={[styles.container, style]}>
-      <Svg width={width} height={height} viewBox="0 0 220 70" fill="none">
-        <Rect x="25" y="14" width="64" height="46" rx="12" fill={boxColor} />
-        <SvgText
-          x="62"
-          y="54"
-          fontSize="42"
-          fontWeight="500"
-          fill={boxTextColor}
-          fontFamily="ModernRomance"
-          textAnchor="middle"
-        >
-          Fin
-        </SvgText>
-        <SvgText
-          x="92"
-          y="54"
-          fontSize="42"
-          fontWeight="500"
-          fill={darkTextColor}
-          fontFamily="ModernRomance"
-        >
-          balance
-        </SvgText>
-      </Svg>
-    </View>
+  const LogoContent = (
+    <Svg width={width} height={height} viewBox="0 0 200 70" fill="none">
+      <Rect x="0" y="14" width="64" height="46" rx="12" fill={boxColor} />
+      <SvgText
+        x="36"
+        y="54"
+        fontSize="42"
+        fontWeight="500"
+        fill={boxTextColor}
+        fontFamily="ModernRomance"
+        textAnchor="middle"
+      >
+        Fin
+      </SvgText>
+      <SvgText
+        x="66"
+        y="54"
+        fontSize="42"
+        fontWeight="500"
+        fill={darkTextColor}
+        fontFamily="ModernRomance"
+      >
+        balance
+      </SvgText>
+    </Svg>
   );
+
+  if (linkToDashboard) {
+    return (
+      <Pressable
+        onPress={handlePress}
+        style={[styles.container, style]}
+        accessibilityRole="button"
+      >
+        {LogoContent}
+      </Pressable>
+    );
+  }
+
+  return <View style={[styles.container, style]}>{LogoContent}</View>;
 }
 
 const styles = StyleSheet.create({

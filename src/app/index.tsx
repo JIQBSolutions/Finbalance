@@ -1,27 +1,26 @@
-import React, { useEffect, useState } from "react";
+import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { LinearGradient } from "expo-linear-gradient";
 import {
-  ArrowRight,
-  Camera,
-  CheckCircle,
-  Clock,
-  Layers,
-  Sparkles,
-  TrendingDown,
-  TrendingUp,
+    ArrowRight,
+    Camera,
+    CheckCircle,
+    Clock,
+    Layers,
+    TrendingDown,
+    TrendingUp,
 } from "lucide-react-native";
-import { FinbalanceLogo } from "../components/FinbalanceLogo";
+import React from "react";
 import {
-  Pressable,
-  SafeAreaView,
-  ScrollView,
-  StyleSheet,
-  Text,
-  useWindowDimensions,
-  View,
+    Pressable,
+    SafeAreaView,
+    ScrollView,
+    StyleSheet,
+    Text,
+    useWindowDimensions,
+    View,
 } from "react-native";
+import { FinbalanceLogo } from "../components/FinbalanceLogo";
 
 const chartBars = [42, 38, 51, 47, 63, 58, 72];
 
@@ -35,50 +34,51 @@ export default function LandingScreen() {
 
       <ScrollView
         style={styles.container}
-        contentContainerStyle={[styles.scrollContent, isDesktop && styles.scrollContentDesktop]}
+        contentContainerStyle={[
+          styles.scrollContent,
+          isDesktop && styles.scrollContentDesktop,
+        ]}
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.glowTwo} />
 
         <Header />
 
-        <View style={[styles.bookLayout, isDesktop && styles.bookLayoutDesktop]}>
+        <View
+          style={[styles.bookLayout, isDesktop && styles.bookLayoutDesktop]}
+        >
           <View style={[styles.bookColumn, isDesktop && styles.bookColumnLeft]}>
             <View style={styles.hero}>
-          <Text style={styles.title}>
-            Claridad para tu <Text style={styles.titleAccent}>dinero.</Text>
-          </Text>
-
-          <Text style={styles.subtitle}>
-            Conoce cuánto gana realmente tu negocio con un simple Check-In.
-            Sin hojas de cálculo complejas.
-          </Text>
-
-          <View style={styles.actions}>
-            <Pressable
-              style={styles.primaryButton}
-              onPress={() => router.push("./auth/register")}
-            >
-              <Text style={styles.primaryButtonText}>
-                Toma el control, crea tu cuenta
+              <Text style={styles.title}>
+                Claridad para tu <Text style={styles.titleAccent}>dinero.</Text>
               </Text>
-              <ArrowRight size={18} color="#0b9387" />
-            </Pressable>
 
-            <Pressable onPress={() => router.push("./auth/login")}>
-              <Text style={styles.loginLink}>Ya tengo una cuenta</Text>
-            </Pressable>
-          </View>
+              <Text style={styles.subtitle}>
+                Conoce cuánto gana realmente tu negocio con un simple Check-In.
+                Sin hojas de cálculo complejas.
+              </Text>
 
-          <View style={styles.trustRow}>
-            <TrustItem label="Gratis" />
-            <TrustItem label="Sin tarjeta" />
-            <TrustItem label="Simple" />
-          </View>
+              <View style={styles.actions}>
+                <Pressable
+                  style={styles.primaryButton}
+                  onPress={() => router.push("/auth/register")}
+                >
+                  <Text style={styles.primaryButtonText}>
+                    Toma el control, empieza el balance
+                  </Text>
+                  <ArrowRight size={18} color="#0b9387" />
+                </Pressable>
+
+                <Pressable onPress={() => router.push("/auth/login")}>
+                  <Text style={styles.loginLink}>Ya tengo una cuenta</Text>
+                </Pressable>
+              </View>
             </View>
           </View>
 
-          <View style={[styles.bookColumn, isDesktop && styles.bookColumnRight]}>
+          <View
+            style={[styles.bookColumn, isDesktop && styles.bookColumnRight]}
+          >
             <DashboardMockup />
           </View>
         </View>
@@ -113,9 +113,13 @@ export default function LandingScreen() {
             <Text style={styles.titleAccent}>claridad financiera.</Text>
           </Text>
 
+          <Text style={styles.finalSubtitle}>
+            Empieza gratis. Sin tarjeta de crédito.
+          </Text>
+
           <Pressable
             style={styles.primaryButton}
-            onPress={() => router.push("./auth/register")}
+            onPress={() => router.push("/auth/register")}
           >
             <Text style={styles.primaryButtonText}>Empezar gratis</Text>
             <ArrowRight size={18} color="#0b9387" />
@@ -129,7 +133,7 @@ export default function LandingScreen() {
 function Header() {
   return (
     <View style={styles.header}>
-      <FinbalanceLogo variant="light" style={styles.logo} />
+      <FinbalanceLogo variant="light" style={styles.logo} linkToDashboard={false} />
     </View>
   );
 }
@@ -159,7 +163,16 @@ function DashboardMockup() {
           </View>
         </View>
 
-       
+        <View style={styles.chart}>
+          {chartBars.map((value, index) => (
+            <View key={index} style={styles.chartColumn}>
+              <LinearGradient
+                colors={["#0EAF87", "rgb(255, 255, 255)"]}
+                style={[styles.chartBar, { height: value }]}
+              />
+            </View>
+          ))}
+        </View>
 
         <View style={styles.transactions}>
           <Text style={styles.sectionLabel}>Movimientos recientes</Text>
@@ -189,7 +202,7 @@ function DashboardMockup() {
 
       <View style={styles.floatingBadge}>
         <View>
-          <Text style={styles.floatingTitle}>Ver resumen completo</Text>
+          <Text style={styles.floatingTitle}>Completar Check-In</Text>
         </View>
       </View>
     </View>
@@ -313,28 +326,27 @@ const styles = StyleSheet.create({
   },
 
   logoContainer: {
-    alignSelf: "center",
     flexDirection: "row",
     alignItems: "center",
   },
 
   logoBox: {
-    width: 90,
-    height: 60,
+    width: 70,
+    height: 50,
     borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
   },
 
   logoBoxText: {
-    fontWeight: "500",
-    fontSize: 64,
+    fontWeight: "600",
+    fontSize: 44,
     letterSpacing: 2,
   },
 
   logoText: {
-    fontSize: 64,
-    fontWeight: "500",
+    fontSize: 44,
+    fontWeight: "600",
     letterSpacing: 2,
   },
 
@@ -348,9 +360,9 @@ const styles = StyleSheet.create({
 
   bookLayoutDesktop: {
     flexDirection: "row",
-    alignItems: "flex-start",
+    alignItems: "center",
     justifyContent: "space-between",
-    gap: 40,
+    gap: 30,
   },
 
   bookColumn: {
@@ -358,12 +370,13 @@ const styles = StyleSheet.create({
   },
 
   bookColumnLeft: {
-    maxWidth: 520,
+    flex: 1,
+    maxWidth: 480,
   },
 
   bookColumnRight: {
-    flex: 1,
-    minWidth: 520,
+    flex: 1.2,
+    minWidth: 480,
   },
 
   scrollContentDesktop: {
@@ -412,7 +425,6 @@ const styles = StyleSheet.create({
 
   title: {
     color: "#ffffff",
-    paddingTop: 10,
     fontSize: 48,
     lineHeight: 53,
     fontWeight: "900",
@@ -488,7 +500,6 @@ const styles = StyleSheet.create({
     position: "relative",
     marginBottom: 48,
   },
-
 
   mockupCard: {
     borderRadius: 28,
@@ -651,7 +662,6 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     borderColor: "rgb(45, 52, 75)",
   },
-
 
   floatingTitle: {
     color: "#E6F1EE",

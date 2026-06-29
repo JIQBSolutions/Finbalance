@@ -69,12 +69,6 @@ export default function LandingScreen() {
               <Text style={styles.loginLink}>Ya tengo una cuenta</Text>
             </Pressable>
           </View>
-
-          <View style={styles.trustRow}>
-            <TrustItem label="Gratis" />
-            <TrustItem label="Sin tarjeta" />
-            <TrustItem label="Simple" />
-          </View>
             </View>
           </View>
 

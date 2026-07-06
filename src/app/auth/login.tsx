@@ -149,6 +149,7 @@ export default function LoginScreen() {
                   />
 
                   <TextInput
+                    testID="email-input"
                     style={styles.input}
                     placeholder="tu@email.com"
                     placeholderTextColor="#6B7280"
@@ -184,6 +185,7 @@ export default function LoginScreen() {
                   />
 
                   <TextInput
+                    testID="password-input"
                     style={styles.input}
                     placeholder="••••••••"
                     placeholderTextColor="#6B7280"

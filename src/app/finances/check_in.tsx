@@ -1,21 +1,22 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  SafeAreaView,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { Feather } from "@expo/vector-icons";
-import { supabase } from "../../lib/supabase";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+    ActivityIndicator,
+    KeyboardAvoidingView,
+    Platform,
+    SafeAreaView,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
+} from "react-native";
 import { FinbalanceLogo } from "../../components/FinbalanceLogo";
+import { supabase } from "../../lib/supabase";
+import { getCurrentWorkspace } from "../../lib/workspaces";
 
 type Workspace = {
   id: string;
@@ -133,23 +134,11 @@ export default function CheckInScreen() {
         return;
       }
 
-      const { data: workspaces, error: workspaceError } = await supabase
-        .from("workspaces")
-        .select("id, name, workspace_type, currency")
-        .eq("is_active", true)
-        .order("created_at", { ascending: true })
-        .limit(1);
-
-      if (workspaceError) {
-        throw new Error(workspaceError.message);
-      }
-
-      if (!workspaces || workspaces.length === 0) {
+      const currentWorkspace = await getCurrentWorkspace();
+      if (!currentWorkspace) {
         router.replace("/dashboard/onboarding");
         return;
       }
-
-      const currentWorkspace = workspaces[0] as Workspace;
       setWorkspace(currentWorkspace);
 
       const { data: balances, error: balancesError } = await supabase

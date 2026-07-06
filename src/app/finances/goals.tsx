@@ -3,20 +3,21 @@ import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  RefreshControl,
-  SafeAreaView,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    KeyboardAvoidingView,
+    Platform,
+    RefreshControl,
+    SafeAreaView,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from "react-native";
 import { FinbalanceLogo } from "../../components/FinbalanceLogo";
 import { supabase } from "../../lib/supabase";
+import { getCurrentWorkspace } from "../../lib/workspaces";
 
 type Workspace = {
   id: string;
@@ -129,6 +130,106 @@ function getGoalAccent(type: GoalType) {
   return type === "savings_goal" ? "#0b9387" : "#EF4444";
 }
 
+function getTodayStart() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return today;
+}
+
+function getTargetDate(dateString?: string | null) {
+  if (!dateString) return null;
+  const date = new Date(`${dateString}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return null;
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+function getDaysRemaining(dateString?: string | null) {
+  const targetDate = getTargetDate(dateString);
+  if (!targetDate) return null;
+  const today = getTodayStart();
+  return Math.ceil(
+    (targetDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
+  );
+}
+
+function getGoalActionVerb(type: GoalType) {
+  return type === "debt" ? "pagar" : "ahorrar";
+}
+
+function getGoalInsight(goal: FinancialGoal) {
+  const targetAmount = Number(goal.target_amount || 0);
+  const currentAmount = Number(goal.current_amount || 0);
+  const remaining = Math.max(targetAmount - currentAmount, 0);
+  const progress =
+    targetAmount > 0 ? Math.min((currentAmount / targetAmount) * 100, 100) : 0;
+  const daysRemaining = getDaysRemaining(goal.target_date);
+  const actionVerb = getGoalActionVerb(goal.goal_type);
+
+  if (goal.is_completed || remaining <= 0) {
+    return {
+      remaining,
+      progress,
+      daysRemaining,
+      requiredWeekly: 0,
+      requiredMonthly: 0,
+      actionVerb,
+      status: "completed" as const,
+      message: "Objetivo completado.",
+    };
+  }
+
+  if (daysRemaining === null) {
+    return {
+      remaining,
+      progress,
+      daysRemaining,
+      requiredWeekly: null,
+      requiredMonthly: null,
+      actionVerb,
+      status: "no_date" as const,
+      message:
+        "Agrega una fecha objetivo para calcular cuánto necesitas por semana y por mes.",
+    };
+  }
+
+  if (daysRemaining < 0) {
+    return {
+      remaining,
+      progress,
+      daysRemaining,
+      requiredWeekly: null,
+      requiredMonthly: null,
+      actionVerb,
+      status: "overdue" as const,
+      message: `La fecha objetivo ya pasó. Aún faltan ${remaining.toFixed(2)}.`,
+    };
+  }
+
+  const safeDays = Math.max(daysRemaining, 1);
+  const weeksRemaining = Math.max(safeDays / 7, 1);
+  const monthsRemaining = Math.max(safeDays / 30, 1);
+
+  return {
+    remaining,
+    progress,
+    daysRemaining,
+    requiredWeekly: remaining / weeksRemaining,
+    requiredMonthly: remaining / monthsRemaining,
+    actionVerb,
+    status: "active" as const,
+    message: `Necesitas ${actionVerb} aproximadamente por semana para llegar a tiempo.`,
+  };
+}
+
+function getDeadlineLabel(daysRemaining: number | null) {
+  if (daysRemaining === null) return "Sin fecha objetivo";
+  if (daysRemaining < 0) return `Vencida hace ${Math.abs(daysRemaining)} días`;
+  if (daysRemaining === 0) return "Vence hoy";
+  if (daysRemaining === 1) return "Vence mañana";
+  return `Faltan ${daysRemaining} días`;
+}
+
 export default function GoalsScreen() {
   const router = useRouter();
 
@@ -194,23 +295,11 @@ export default function GoalsScreen() {
         return;
       }
 
-      const { data: workspaces, error: workspaceError } = await supabase
-        .from("workspaces")
-        .select("id, name, workspace_type, currency")
-        .eq("is_active", true)
-        .order("created_at", { ascending: true })
-        .limit(1);
-
-      if (workspaceError) {
-        throw new Error(workspaceError.message);
-      }
-
-      if (!workspaces || workspaces.length === 0) {
+      const currentWorkspace = await getCurrentWorkspace();
+      if (!currentWorkspace) {
         router.replace("/dashboard/onboarding");
         return;
       }
-
-      const currentWorkspace = workspaces[0] as Workspace;
       setWorkspace(currentWorkspace);
 
       const { data, error } = await supabase
@@ -835,6 +924,7 @@ function GoalCard({
 
   const remaining = Math.max(goal.target_amount - goal.current_amount, 0);
   const accentColor = getGoalAccent(goal.goal_type);
+  const insight = getGoalInsight(goal);
 
   return (
     <View style={[styles.goalCard, { borderLeftColor: accentColor }]}>
@@ -901,6 +991,8 @@ function GoalCard({
           Faltan {formatMoney(remaining, currency)}
         </Text>
       </View>
+
+      <GoalInsightBox goal={goal} insight={insight} currency={currency} />
 
       {isEditing ? (
         <View style={styles.editProgressBox}>
@@ -969,6 +1061,70 @@ function GoalCard({
             </TouchableOpacity>
           )}
         </View>
+      )}
+    </View>
+  );
+}
+
+function GoalInsightBox({
+  goal,
+  insight,
+  currency,
+}: {
+  goal: FinancialGoal;
+  insight: ReturnType<typeof getGoalInsight>;
+  currency: string;
+}) {
+  const accentColor = getGoalAccent(goal.goal_type);
+  return (
+    <View style={styles.goalInsightBox}>
+      <View style={styles.goalInsightHeader}>
+        <View style={styles.goalInsightIcon}>
+          <Feather name="zap" size={15} color={accentColor} />
+        </View>
+        <View style={styles.goalInsightHeaderText}>
+          <Text style={styles.goalInsightTitle}>Indicador inteligente</Text>
+          <Text style={styles.goalInsightSubtitle}>
+            {getDeadlineLabel(insight.daysRemaining)}
+          </Text>
+        </View>
+      </View>
+      {insight.status === "active" ? (
+        <>
+          <View style={styles.goalInsightGrid}>
+            <View style={styles.goalInsightStat}>
+              <Text style={styles.goalInsightStatLabel}>Por semana</Text>
+              <Text style={styles.goalInsightStatValue}>
+                {formatMoney(insight.requiredWeekly || 0, currency)}
+              </Text>
+            </View>
+            <View style={styles.goalInsightStat}>
+              <Text style={styles.goalInsightStatLabel}>Por mes</Text>
+              <Text style={styles.goalInsightStatValue}>
+                {formatMoney(insight.requiredMonthly || 0, currency)}
+              </Text>
+            </View>
+          </View>
+          <Text style={styles.goalInsightMessage}>
+            Necesitas {insight.actionVerb}{" "}
+            {formatMoney(insight.requiredWeekly || 0, currency)} por semana
+            para cumplir esta meta a tiempo.
+          </Text>
+        </>
+      ) : (
+        <Text
+          style={[
+            styles.goalInsightMessage,
+            insight.status === "overdue" && styles.goalInsightWarning,
+          ]}
+        >
+          {insight.status === "overdue"
+            ? `La fecha objetivo ya pasó. Aún faltan ${formatMoney(
+                insight.remaining,
+                currency
+              )}.`
+            : insight.message}
+        </Text>
       )}
     </View>
   );
@@ -1441,6 +1597,85 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: 12,
     marginBottom: 14,
+  },
+
+  goalInsightBox: {
+    backgroundColor: "#111827",
+    borderWidth: 1,
+    borderColor: "#334155",
+    borderRadius: 18,
+    padding: 14,
+    marginBottom: 14,
+  },
+
+  goalInsightHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 12,
+  },
+
+  goalInsightIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: "rgba(11,147,135,0.12)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  goalInsightHeaderText: {
+    flex: 1,
+  },
+
+  goalInsightTitle: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "900",
+  },
+
+  goalInsightSubtitle: {
+    color: "#94A3B8",
+    fontSize: 12,
+    marginTop: 2,
+  },
+
+  goalInsightGrid: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 12,
+    marginBottom: 12,
+  },
+
+  goalInsightStat: {
+    flex: 1,
+    backgroundColor: "rgba(15,23,42,0.75)",
+    borderRadius: 14,
+    padding: 12,
+  },
+
+  goalInsightStatLabel: {
+    color: "#94A3B8",
+    fontSize: 11,
+    fontWeight: "800",
+    marginBottom: 4,
+  },
+
+  goalInsightStatValue: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "900",
+  },
+
+  goalInsightMessage: {
+    color: "#94A3B8",
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: "600",
+  },
+
+  goalInsightWarning: {
+    color: "#FCA5A5",
   },
 
   goalProgressText: {

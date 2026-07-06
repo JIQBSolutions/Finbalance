@@ -14,6 +14,7 @@ import {
 } from "react-native";
 import { FinbalanceLogo } from "../../components/FinbalanceLogo";
 import { supabase } from "../../lib/supabase";
+import { getCurrentWorkspace } from "../../lib/workspaces";
 
 type Workspace = {
   id: string;
@@ -43,6 +44,50 @@ type LastCheckIn = {
   check_in_date: string;
   created_at: string;
   snapshots_count: number;
+};
+
+type CheckInTrend = {
+  id: string;
+  check_in_date: string;
+  created_at: string;
+};
+
+type AccountTrend = {
+  id: string;
+  account_type: AccountType;
+};
+
+type SnapshotTrend = {
+  id: string;
+  check_in_id: string;
+  account_id: string;
+  balance: number;
+  created_at: string;
+};
+
+type BalancePoint = {
+  checkInId: string;
+  checkInDate: string;
+  createdAt: string;
+  operationalAvailable: number;
+};
+
+type DashboardTrends = {
+  changeSinceLast: number | null;
+  weeklyVariation: number | null;
+  monthlyVariation: number | null;
+  previousDate: string | null;
+  weeklyReferenceDate: string | null;
+  monthlyReferenceDate: string | null;
+};
+
+const EMPTY_DASHBOARD_TRENDS: DashboardTrends = {
+  changeSinceLast: null,
+  weeklyVariation: null,
+  monthlyVariation: null,
+  previousDate: null,
+  weeklyReferenceDate: null,
+  monthlyReferenceDate: null,
 };
 
 type DistributionItem = {
@@ -138,12 +183,184 @@ function getCheckInTypeLabel(type?: CheckInType) {
   return labels[type];
 }
 
+function formatSignedMoney(amount: number | null, currency = "MXN") {
+  if (amount === null) return "Sin datos";
+  if (amount === 0) {
+    return formatMoney(0, currency);
+  }
+  const prefix = amount > 0 ? "+" : "";
+  return `${prefix}${formatMoney(amount, currency)}`;
+}
+
+function getTrendColor(amount: number | null) {
+  if (amount === null) return "#94A3B8";
+  if (amount > 0) return "#86EFAC";
+  if (amount < 0) return "#FCA5A5";
+  return "#CBD5E1";
+}
+
+function getCheckInTime(checkIn: CheckInTrend) {
+  const rawDate = checkIn.created_at || `${checkIn.check_in_date}T00:00:00`;
+  const date = new Date(rawDate);
+  if (!Number.isNaN(date.getTime())) {
+    return date.getTime();
+  }
+  return new Date(`${checkIn.check_in_date}T00:00:00`).getTime();
+}
+
+function getBalancePointTime(point: BalancePoint) {
+  const rawDate = point.createdAt || `${point.checkInDate}T00:00:00`;
+  const date = new Date(rawDate);
+  if (!Number.isNaN(date.getTime())) {
+    return date.getTime();
+  }
+  return new Date(`${point.checkInDate}T00:00:00`).getTime();
+}
+
+function subtractDays(date: Date, days: number) {
+  const copy = new Date(date);
+  copy.setDate(copy.getDate() - days);
+  return copy;
+}
+
+function findReferencePoint(points: BalancePoint[], targetDate: Date) {
+  if (points.length <= 1) return null;
+  const targetTime = targetDate.getTime();
+  const withoutLatest = points.slice(0, -1);
+  const beforeTarget = withoutLatest.filter(
+    (point) => getBalancePointTime(point) <= targetTime
+  );
+  if (beforeTarget.length > 0) {
+    return beforeTarget[beforeTarget.length - 1];
+  }
+  return withoutLatest[0] || null;
+}
+
+function buildDashboardTrends(
+  checkIns: CheckInTrend[],
+  snapshots: SnapshotTrend[],
+  accounts: AccountTrend[]
+): DashboardTrends {
+  if (checkIns.length === 0) {
+    return EMPTY_DASHBOARD_TRENDS;
+  }
+
+  const accountById = new Map(accounts.map((account) => [account.id, account]));
+
+  const snapshotsByCheckIn = snapshots.reduce<Record<string, SnapshotTrend[]>>(
+    (acc, snapshot) => {
+      if (!acc[snapshot.check_in_id]) {
+        acc[snapshot.check_in_id] = [];
+      }
+      acc[snapshot.check_in_id].push(snapshot);
+      return acc;
+    },
+    {}
+  );
+
+  const sortedCheckIns = [...checkIns].sort(
+    (a, b) => getCheckInTime(a) - getCheckInTime(b)
+  );
+
+  const latestBalanceByAccount = new Map<string, number>();
+
+  const balancePoints: BalancePoint[] = sortedCheckIns.map((checkIn) => {
+    const currentSnapshots = snapshotsByCheckIn[checkIn.id] || [];
+
+    currentSnapshots.forEach((snapshot) => {
+      latestBalanceByAccount.set(snapshot.account_id, Number(snapshot.balance || 0));
+    });
+
+    let operationalAvailable = 0;
+    latestBalanceByAccount.forEach((balance, accountId) => {
+      const account = accountById.get(accountId);
+      if (account?.account_type === "bank" || account?.account_type === "cash") {
+        operationalAvailable += balance;
+      }
+    });
+
+    return {
+      checkInId: checkIn.id,
+      checkInDate: checkIn.check_in_date,
+      createdAt: checkIn.created_at,
+      operationalAvailable,
+    };
+  });
+
+  const latest = balancePoints[balancePoints.length - 1];
+  if (!latest) {
+    return EMPTY_DASHBOARD_TRENDS;
+  }
+
+  const previous = balancePoints.length >= 2 ? balancePoints[balancePoints.length - 2] : null;
+  const latestDate = new Date(getBalancePointTime(latest));
+
+  const weeklyReference = findReferencePoint(balancePoints, subtractDays(latestDate, 7));
+  const monthlyReference = findReferencePoint(balancePoints, subtractDays(latestDate, 30));
+
+  return {
+    changeSinceLast: previous
+      ? latest.operationalAvailable - previous.operationalAvailable
+      : null,
+    weeklyVariation: weeklyReference
+      ? latest.operationalAvailable - weeklyReference.operationalAvailable
+      : null,
+    monthlyVariation: monthlyReference
+      ? latest.operationalAvailable - monthlyReference.operationalAvailable
+      : null,
+    previousDate: previous?.checkInDate || null,
+    weeklyReferenceDate: weeklyReference?.checkInDate || null,
+    monthlyReferenceDate: monthlyReference?.checkInDate || null,
+  };
+}
+
+async function fetchDashboardTrends(workspaceId: string) {
+  const { data: accountsData, error: accountsError } = await supabase
+    .from("accounts")
+    .select("id, account_type")
+    .eq("workspace_id", workspaceId);
+
+  if (accountsError) {
+    throw new Error(accountsError.message);
+  }
+
+  const { data: checkInsData, error: checkInsError } = await supabase
+    .from("check_ins")
+    .select("id, check_in_date, created_at")
+    .eq("workspace_id", workspaceId)
+    .order("check_in_date", { ascending: true })
+    .order("created_at", { ascending: true });
+
+  if (checkInsError) {
+    throw new Error(checkInsError.message);
+  }
+
+  const { data: snapshotsData, error: snapshotsError } = await supabase
+    .from("account_snapshots")
+    .select("id, check_in_id, account_id, balance, created_at")
+    .eq("workspace_id", workspaceId)
+    .order("created_at", { ascending: true });
+
+  if (snapshotsError) {
+    throw new Error(snapshotsError.message);
+  }
+
+  return buildDashboardTrends(
+    (checkInsData || []) as CheckInTrend[],
+    (snapshotsData || []) as SnapshotTrend[],
+    (accountsData || []) as AccountTrend[]
+  );
+}
+
 export default function DashboardScreen() {
   const router = useRouter();
 
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [accounts, setAccounts] = useState<AccountBalance[]>([]);
   const [lastCheckIn, setLastCheckIn] = useState<LastCheckIn | null>(null);
+  const [dashboardTrends, setDashboardTrends] = useState<DashboardTrends>(
+    EMPTY_DASHBOARD_TRENDS
+  );
 
   const [firstName, setFirstName] = useState("Usuario");
   const [isLoading, setIsLoading] = useState(true);
@@ -159,7 +376,7 @@ export default function DashboardScreen() {
         const balance = Number(account.balance || 0);
 
         if (account.account_type === "bank" || account.account_type === "cash") {
-          acc.available += balance;
+          acc.operationalAvailable += balance;
         }
 
         if (account.account_type === "investment") {
@@ -173,16 +390,19 @@ export default function DashboardScreen() {
         return acc;
       },
       {
-        available: 0,
+        operationalAvailable: 0,
         investments: 0,
         debt: 0,
       }
     );
   }, [accounts]);
 
-  const netWorth = totals.available + totals.investments - totals.debt;
+  const totalAssets = totals.operationalAvailable + totals.investments;
 
-  const registeredTotal = totals.available + totals.investments + totals.debt;
+  const netWorth = totalAssets - totals.debt;
+
+  const registeredTotal =
+    totals.operationalAvailable + totals.investments + totals.debt;
 
   const operationalAccounts = accounts.filter(
     (account) => account.account_type === "bank" || account.account_type === "cash"
@@ -196,9 +416,9 @@ export default function DashboardScreen() {
   const distributionItems: DistributionItem[] = useMemo(
     () => [
       {
-        key: "available",
-        label: "Disponible",
-        value: totals.available,
+        key: "operationalAvailable",
+        label: "Disponible operativo",
+        value: totals.operationalAvailable,
         color: "#0b9387",
         description: "Banco + efectivo",
       },
@@ -217,7 +437,7 @@ export default function DashboardScreen() {
         description: "Compromisos pendientes",
       },
     ],
-    [totals.available, totals.investments, totals.debt]
+    [totals.operationalAvailable, totals.investments, totals.debt]
   );
 
   const loadDashboard = useCallback(async () => {
@@ -242,23 +462,11 @@ export default function DashboardScreen() {
           : user.email?.split("@")[0] || "Usuario"
       );
 
-      const { data: workspaces, error: workspaceError } = await supabase
-        .from("workspaces")
-        .select("id, name, workspace_type, currency")
-        .eq("is_active", true)
-        .order("created_at", { ascending: true })
-        .limit(1);
-
-      if (workspaceError) {
-        throw new Error(workspaceError.message);
-      }
-
-      if (!workspaces || workspaces.length === 0) {
+      const currentWorkspace = await getCurrentWorkspace();
+      if (!currentWorkspace) {
         router.replace("/dashboard/onboarding");
         return;
       }
-
-      const currentWorkspace = workspaces[0] as Workspace;
       setWorkspace(currentWorkspace);
 
       const { data: balances, error: balancesError } = await supabase
@@ -271,6 +479,8 @@ export default function DashboardScreen() {
       }
 
       setAccounts((balances || []) as AccountBalance[]);
+      const trends = await fetchDashboardTrends(currentWorkspace.id);
+      setDashboardTrends(trends);
 
       const { data: checkIns, error: checkInsError } = await supabase
         .from("check_ins")
@@ -437,15 +647,15 @@ export default function DashboardScreen() {
         <View style={styles.heroCard}>
           <View style={styles.heroTopRow}>
             <View>
-              <Text style={styles.heroLabel}>Dinero disponible</Text>
+              <Text style={styles.heroLabel}>Dinero disponible operativo</Text>
               <Text style={styles.heroAmount}>
-                {formatMoney(totals.available, currency)}
+                {formatMoney(totals.operationalAvailable, currency)}
               </Text>
             </View>
           </View>
 
           <Text style={styles.heroDescription}>
-            Es el dinero operativo que tienes en banco y efectivo. No incluye
+            Es el dinero que puedes usar hoy en banco y efectivo. No incluye
             inversiones ni deudas.
           </Text>
 
@@ -459,11 +669,47 @@ export default function DashboardScreen() {
           </TouchableOpacity>
         </View>
 
+        <View style={styles.trendGrid}>
+          <TrendMetricCard
+            label="Cambio último Check-In"
+            value={dashboardTrends.changeSinceLast}
+            currency={currency}
+            description={
+              dashboardTrends.previousDate
+                ? `vs ${formatDate(dashboardTrends.previousDate)}`
+                : "Necesitas al menos dos registros"
+            }
+            icon="refresh-cw"
+          />
+          <TrendMetricCard
+            label="Variación semanal"
+            value={dashboardTrends.weeklyVariation}
+            currency={currency}
+            description={
+              dashboardTrends.weeklyReferenceDate
+                ? `vs ${formatDate(dashboardTrends.weeklyReferenceDate)}`
+                : "Sin referencia semanal todavía"
+            }
+            icon="calendar"
+          />
+          <TrendMetricCard
+            label="Variación mensual"
+            value={dashboardTrends.monthlyVariation}
+            currency={currency}
+            description={
+              dashboardTrends.monthlyReferenceDate
+                ? `vs ${formatDate(dashboardTrends.monthlyReferenceDate)}`
+                : "Sin referencia mensual todavía"
+            }
+            icon="bar-chart-2"
+          />
+        </View>
+
         <View style={styles.diagnosticGrid}>
           <DiagnosticCard
             label="Balance neto estimado"
             value={formatMoney(netWorth, currency)}
-            description="Disponible + inversiones - deudas"
+            description="Activos registrados - deudas"
             icon="activity"
             accentColor={netWorth >= 0 ? "#22C55E" : "#EF4444"}
           />
@@ -493,10 +739,10 @@ export default function DashboardScreen() {
 
         <View style={styles.metricsGrid}>
           <MetricCard
-            label="Ahorros e inversiones"
-            value={formatMoney(totals.investments, currency)}
-            description="Capital separado del dinero operativo"
-            icon="trending-up"
+            label="Activos registrados"
+            value={formatMoney(totalAssets, currency)}
+            description="Disponible operativo + inversiones"
+            icon="pie-chart"
           />
 
           <MetricCard
@@ -628,6 +874,37 @@ export default function DashboardScreen() {
         )}
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+function TrendMetricCard({
+  label,
+  value,
+  currency,
+  description,
+  icon,
+}: {
+  label: string;
+  value: number | null;
+  currency: string;
+  description: string;
+  icon: keyof typeof Feather.glyphMap;
+}) {
+  const trendColor = getTrendColor(value);
+
+  return (
+    <View style={styles.trendCard}>
+      <View style={styles.trendCardTop}>
+        <View style={styles.trendIcon}>
+          <Feather name={icon} size={17} color={trendColor} />
+        </View>
+        <Text style={styles.trendLabel}>{label}</Text>
+      </View>
+      <Text style={[styles.trendValue, { color: trendColor }]}> 
+        {formatSignedMoney(value, currency)}
+      </Text>
+      <Text style={styles.trendDescription}>{description}</Text>
+    </View>
   );
 }
 
@@ -1225,6 +1502,56 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 2,
     fontWeight: "700",
+  },
+
+  trendGrid: {
+    gap: 12,
+    marginBottom: 18,
+  },
+
+  trendCard: {
+    backgroundColor: "#1E293B",
+    borderWidth: 1,
+    borderColor: "#334155",
+    borderRadius: 20,
+    padding: 16,
+  },
+
+  trendCardTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 12,
+  },
+
+  trendIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 12,
+    backgroundColor: "#0F172A",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  trendLabel: {
+    color: "#CBD5E1",
+    fontSize: 13,
+    fontWeight: "800",
+    flex: 1,
+  },
+
+  trendValue: {
+    fontSize: 24,
+    fontWeight: "900",
+    letterSpacing: -0.5,
+    marginBottom: 4,
+  },
+
+  trendDescription: {
+    color: "#64748B",
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 17,
   },
 
   quickActionsGrid: {

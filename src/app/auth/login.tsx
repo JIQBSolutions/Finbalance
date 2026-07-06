@@ -16,6 +16,7 @@ import {
 } from "react-native";
 import { FinbalanceLogo } from "../../components/FinbalanceLogo";
 import { supabase } from "../../lib/supabase";
+import { getCurrentWorkspace } from "../../lib/workspaces";
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -49,19 +50,11 @@ export default function LoginScreen() {
   };
 
   const redirectAfterLogin = async () => {
-    const { data, error } = await supabase
-      .from("workspaces")
-      .select("id")
-      .eq("is_active", true)
-      .limit(1);
+    const currentWorkspace = await getCurrentWorkspace();
 
-    if (error) {
-      throw new Error("No pudimos cargar tus espacios de trabajo.");
-    }
-
-    if (!data || data.length === 0) {
-      router.replace("/dashboard/onboarding");
-      return;
+    if (!currentWorkspace) {
+    router.replace("/dashboard/onboarding");
+     return;
     }
 
     router.replace("/dashboard/dashboard");

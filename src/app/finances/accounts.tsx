@@ -17,6 +17,7 @@ import {
 } from "react-native";
 import { FinbalanceLogo } from "../../components/FinbalanceLogo";
 import { supabase } from "../../lib/supabase";
+import { getCurrentWorkspace } from "../../lib/workspaces";
 
 type Workspace = {
   id: string;
@@ -197,23 +198,11 @@ export default function AccountsScreen() {
         return;
       }
 
-      const { data: workspaces, error: workspaceError } = await supabase
-        .from("workspaces")
-        .select("id, name, workspace_type, currency")
-        .eq("is_active", true)
-        .order("created_at", { ascending: true })
-        .limit(1);
-
-      if (workspaceError) {
-        throw new Error(workspaceError.message);
-      }
-
-      if (!workspaces || workspaces.length === 0) {
+      const currentWorkspace = await getCurrentWorkspace();
+      if (!currentWorkspace) {
         router.replace("/dashboard/onboarding");
         return;
       }
-
-      const currentWorkspace = workspaces[0] as Workspace;
       setWorkspace(currentWorkspace);
 
       const { data: balances, error: balancesError } = await supabase

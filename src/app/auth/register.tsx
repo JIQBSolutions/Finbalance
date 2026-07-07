@@ -3,16 +3,16 @@ import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
 import {
-    ActivityIndicator,
-    KeyboardAvoidingView,
-    Platform,
-    SafeAreaView,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { FinbalanceLogo } from "../../components/FinbalanceLogo";
 import { supabase } from "../../lib/supabase";
@@ -221,6 +221,7 @@ export default function RegisterScreen() {
                   }}
                   autoCapitalize="words"
                   autoCorrect={false}
+                  testID="fullName-input"
                 />
               </View>
 
@@ -257,6 +258,7 @@ export default function RegisterScreen() {
                   keyboardType="email-address"
                   autoCapitalize="none"
                   autoCorrect={false}
+                  testID="email-input"
                 />
               </View>
 

@@ -2,23 +2,23 @@ import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import {
-    ArrowRight,
-    Camera,
-    CheckCircle,
-    Clock,
-    Layers,
-    TrendingDown,
-    TrendingUp,
+  ArrowRight,
+  Camera,
+  CheckCircle,
+  Clock,
+  Layers,
+  TrendingDown,
+  TrendingUp,
 } from "lucide-react-native";
 import React from "react";
 import {
-    Pressable,
-    SafeAreaView,
-    ScrollView,
-    StyleSheet,
-    Text,
-    useWindowDimensions,
-    View,
+  Pressable,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
 } from "react-native";
 import { FinbalanceLogo } from "../components/FinbalanceLogo";
 
@@ -62,6 +62,7 @@ export default function LandingScreen() {
                 <Pressable
                   style={styles.primaryButton}
                   onPress={() => router.push("/auth/register")}
+                  testID="register-button"
                 >
                   <Text style={styles.primaryButtonText}>
                     Toma el control, empieza el balance
@@ -69,7 +70,7 @@ export default function LandingScreen() {
                   <ArrowRight size={18} color="#0b9387" />
                 </Pressable>
 
-                <Pressable onPress={() => router.push("/auth/login")}>
+                <Pressable onPress={() => router.push("/auth/login")} testID="login-button-dashboard">
                   <Text style={styles.loginLink}>Ya tengo una cuenta</Text>
                 </Pressable>
               </View>

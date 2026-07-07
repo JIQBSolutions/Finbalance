@@ -368,6 +368,7 @@ export default function DashboardScreen() {
               style={styles.userMenuButton}
               onPress={() => setIsUserMenuOpen((prev) => !prev)}
               activeOpacity={0.85}
+              testID="user-menu-button"
             >
               <Feather name="settings" size={18} color="#94A3B8" />
             </TouchableOpacity>
@@ -381,6 +382,7 @@ export default function DashboardScreen() {
                     router.push("/user_config/settings");
                   }}
                   activeOpacity={0.8}
+                  testID="settings-button"
                 >
                   <Text style={styles.userMenuItemText}>Configuración</Text>
                 </TouchableOpacity>
@@ -392,6 +394,7 @@ export default function DashboardScreen() {
                     router.push("/user_config/profile");
                   }}
                   activeOpacity={0.8}
+                  testID="profile-button"
                 >
                   <Text style={styles.userMenuItemText}>Perfil</Text>
                 </TouchableOpacity>
@@ -403,6 +406,7 @@ export default function DashboardScreen() {
                     handleLogout();
                   }}
                   activeOpacity={0.8}
+                  testID="logout-button"
                 >
                   <Text style={styles.userMenuItemDanger}>Cerrar sesión</Text>
                 </TouchableOpacity>
@@ -453,6 +457,7 @@ export default function DashboardScreen() {
             style={styles.checkInButton}
             onPress={() => router.push("/finances/check_in")}
             activeOpacity={0.85}
+            testID="check-in-button"
           >
             <Feather name="edit-3" size={18} color="#FFFFFF" />
             <Text style={styles.checkInButtonText}>Hacer Check-In</Text>

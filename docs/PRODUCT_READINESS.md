@@ -26,6 +26,10 @@ pendientes y preparación para deploy.
 | Metas | Alta y actualización de avance | Cubierto |
 | Metas | Edición completa de datos | Cubierto |
 | Metas | Completar, reabrir y eliminar | Cubierto |
+| Deudas | Aparición automática en el panel de metas | Cubierto |
+| Deudas | Registro de abonos con actualización del saldo real | Cubierto |
+| Deudas | Plan editable y cálculo semanal/mensual por plazo | Cubierto |
+| Deudas | Historial del último abono y progreso acumulado | Cubierto |
 | Deploy | Variables documentadas y no versionadas | Cubierto |
 | Deploy | Migración para nuevas operaciones | Cubierto |
 | Deploy | Configuración de export web y EAS | Cubierto |
@@ -40,6 +44,10 @@ pendientes y preparación para deploy.
 - Eliminar una meta es permanente y requiere confirmación.
 - Las operaciones privilegiadas de cuentas validan propiedad del workspace en
   Supabase, no sólo en la interfaz.
+- Cada abono de deuda crea un snapshot y un registro de pago dentro de una misma
+  operación de Supabase; el historial y el saldo no pueden quedar desfasados.
+- El monto semanal y mensual recomendado se recalcula con el saldo actual y los
+  días restantes hasta la fecha límite configurada.
 
 ## Dependencias externas antes de producción
 

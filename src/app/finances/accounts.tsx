@@ -704,6 +704,11 @@ export default function AccountsScreen() {
                   isSaving={isSaving}
                   onEdit={() => openAccountForm(account)}
                   onArchive={() => handleArchiveAccount(account)}
+                  onManageDebt={
+                    account.account_type === "credit"
+                      ? () => router.push("/finances/goals")
+                      : undefined
+                  }
                 />
               ))
             ) : (
@@ -743,12 +748,14 @@ function AccountRow({
   isSaving,
   onEdit,
   onArchive,
+  onManageDebt,
 }: {
   account: AccountBalance;
   currency: string;
   isSaving: boolean;
   onEdit: () => void;
   onArchive: () => void;
+  onManageDebt?: () => void;
 }) {
   const accountName = account.account_name || account.name || "Cuenta";
 
@@ -778,6 +785,17 @@ function AccountRow({
       </View>
 
       <View style={styles.accountActions}>
+        {onManageDebt && (
+          <TouchableOpacity
+            style={styles.accountActionButton}
+            onPress={onManageDebt}
+            disabled={isSaving}
+          >
+            <Feather name="dollar-sign" size={15} color="#0b9387" />
+            <Text style={styles.accountActionText}>Abonos</Text>
+          </TouchableOpacity>
+        )}
+
         <TouchableOpacity
           style={styles.accountActionButton}
           onPress={onEdit}

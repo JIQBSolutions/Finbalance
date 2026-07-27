@@ -17,6 +17,8 @@ consultar tendencias e historial y administrar metas de ahorro o pago de deuda.
 - Historial filtrable con detalle por cuenta.
 - Metas de ahorro o deuda con creación, edición completa, actualización de
   avance, finalización, reapertura y eliminación.
+- Deudas vinculadas al saldo real de sus cuentas, con planes por fecha límite,
+  abonos registrados e importes recomendados por semana y por mes.
 
 ## Requisitos
 

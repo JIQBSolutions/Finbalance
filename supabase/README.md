@@ -18,5 +18,13 @@ La migración de administración de cuentas:
 - elimina cuentas de forma lógica mediante `is_active = false`;
 - habilita la eliminación de metas sólo dentro de workspaces propios.
 
+La migración de planes de deuda:
+
+- crea un plan vinculado automáticamente para cada cuenta de tipo deuda;
+- conserva el monto inicial, la fecha límite y una nota editable;
+- registra cada abono con saldo anterior, saldo nuevo y fecha;
+- crea el snapshot de saldo y el abono dentro de una sola función atómica;
+- restringe la lectura y las operaciones al dueño autenticado del workspace.
+
 Después de aplicarla, fuerza la recarga del esquema REST desde el dashboard de
 Supabase si PostgREST aún no reconoce las funciones nuevas.

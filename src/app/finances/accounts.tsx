@@ -1,7 +1,7 @@
 import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
     ActivityIndicator,
     KeyboardAvoidingView,
@@ -15,7 +15,13 @@ import {
     TouchableOpacity,
     View,
 } from "react-native";
+import { FieldError } from "../../components/FieldError";
 import { FinbalanceLogo } from "../../components/FinbalanceLogo";
+import { confirmDestructiveAction } from "../../lib/confirm";
+import {
+  formatMoneyInput,
+  parseMoneyInput,
+} from "../../lib/form-formats";
 import { supabase } from "../../lib/supabase";
 import { getCurrentWorkspace } from "../../lib/workspaces";
 
@@ -79,29 +85,6 @@ function formatMoney(amount: number, currency = "MXN") {
   }).format(amount);
 }
 
-function parseMoney(value: string) {
-  const cleanValue = value.trim().replace(/\s/g, "");
-
-  if (!cleanValue) return null;
-
-  const hasComma = cleanValue.includes(",");
-  const hasDot = cleanValue.includes(".");
-
-  let normalizedValue = cleanValue;
-
-  if (hasComma && hasDot) {
-    normalizedValue = cleanValue.replace(/,/g, "");
-  } else if (hasComma) {
-    normalizedValue = cleanValue.replace(",", ".");
-  }
-
-  const numberValue = Number(normalizedValue);
-
-  if (!Number.isFinite(numberValue)) return null;
-
-  return numberValue;
-}
-
 function getAccountTypeLabel(type: AccountType) {
   const labels = {
     bank: "Banco",
@@ -126,6 +109,7 @@ function getAccountIcon(type: AccountType): keyof typeof Feather.glyphMap {
 
 export default function AccountsScreen() {
   const router = useRouter();
+  const scrollViewRef = useRef<ScrollView>(null);
 
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [accounts, setAccounts] = useState<AccountBalance[]>([]);
@@ -135,11 +119,17 @@ export default function AccountsScreen() {
   const [isSaving, setIsSaving] = useState(false);
 
   const [globalError, setGlobalError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
 
   const [accountName, setAccountName] = useState("");
   const [accountType, setAccountType] = useState<AccountType>("bank");
   const [initialBalance, setInitialBalance] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<{
+    name?: string;
+    balance?: string;
+  }>({});
 
   const currency = workspace?.currency || "MXN";
 
@@ -250,98 +240,168 @@ export default function AccountsScreen() {
     setAccountType("bank");
     setInitialBalance("");
     setShowCreateForm(false);
+    setEditingAccountId(null);
     setGlobalError(null);
+    setFieldErrors({});
   };
 
-  const validateNewAccount = () => {
+  const openAccountForm = (account?: AccountBalance) => {
+    setGlobalError(null);
+    setSuccessMessage(null);
+    setFieldErrors({});
+
+    if (account) {
+      setEditingAccountId(account.account_id);
+      setAccountName(account.account_name || account.name || "");
+      setAccountType(account.account_type);
+      setInitialBalance(formatMoneyInput(String(Number(account.balance || 0))));
+    } else {
+      setEditingAccountId(null);
+      setAccountName("");
+      setAccountType("bank");
+      setInitialBalance("");
+    }
+
+    setShowCreateForm(true);
+    requestAnimationFrame(() => {
+      scrollViewRef.current?.scrollTo({ y: 340, animated: true });
+    });
+  };
+
+  const validateAccount = () => {
+    const nextErrors: { name?: string; balance?: string } = {};
+
     if (!workspace) {
       setGlobalError("No encontramos un workspace activo.");
       return false;
     }
 
     if (!accountName.trim()) {
-      setGlobalError("Ingresa el nombre de la cuenta.");
-      return false;
-    }
-
-    if (accountName.trim().length > 40) {
-      setGlobalError("El nombre de la cuenta no puede exceder 40 caracteres.");
-      return false;
+      nextErrors.name = "Ingresa el nombre de la cuenta.";
+    } else if (accountName.trim().length > 40) {
+      nextErrors.name = "El nombre no puede exceder 40 caracteres.";
     }
 
     const normalizedNewName = accountName.trim().toLowerCase();
 
     const duplicatedName = accounts.some((account) => {
       const currentName = account.account_name || account.name || "";
-      return currentName.trim().toLowerCase() === normalizedNewName;
+      return (
+        account.account_id !== editingAccountId &&
+        currentName.trim().toLowerCase() === normalizedNewName
+      );
     });
 
     if (duplicatedName) {
-      setGlobalError("Ya existe una cuenta con ese nombre.");
-      return false;
+      nextErrors.name = "Ya existe una cuenta con ese nombre.";
     }
 
-    const balance = parseMoney(initialBalance || "0");
+    const balance = parseMoneyInput(initialBalance || "0");
 
     if (balance === null) {
-      setGlobalError("El saldo inicial debe ser un número válido.");
-      return false;
+      nextErrors.balance =
+        "Ingresa un monto válido. Usa comas para miles y punto para centavos.";
     }
 
-    if (balance < 0) {
-      setGlobalError("El saldo inicial no puede ser negativo.");
-      return false;
-    }
-
-    return true;
+    setFieldErrors(nextErrors);
+    return Object.keys(nextErrors).length === 0;
   };
 
-    const handleCreateAccount = async () => {
-     setGlobalError(null);
+  const handleSaveAccount = async () => {
+    setGlobalError(null);
+    setSuccessMessage(null);
 
-     if (!validateNewAccount()) return;
+    if (!validateAccount()) return;
 
-      setIsSaving(true);
+    setIsSaving(true);
 
-      try {
+    try {
       const {
         data: { user },
         error: userError,
       } = await supabase.auth.getUser();
 
-       if (userError || !user) {
+      if (userError || !user) {
         router.replace("/auth/login");
         return;
       }
 
       if (!workspace) {
         throw new Error("No encontramos un workspace activo.");
-       }
+      }
 
-       const parsedInitialBalance = parseMoney(initialBalance || "0") || 0;
-
-       const { error: rpcError } = await supabase.rpc(
-       "create_account_with_initial_snapshot",
-        {
-         p_workspace_id: workspace.id,
-         p_name: accountName.trim(),
-         p_account_type: accountType,
-         p_initial_balance: parsedInitialBalance,
-         p_currency: currency,
-         }
-       );
+      const parsedBalance = parseMoneyInput(initialBalance || "0") || 0;
+      const { error: rpcError } = editingAccountId
+        ? await supabase.rpc("update_financial_account", {
+            p_account_id: editingAccountId,
+            p_name: accountName.trim(),
+            p_account_type: accountType,
+            p_balance: parsedBalance,
+            p_currency: currency,
+          })
+        : await supabase.rpc("create_account_with_initial_snapshot", {
+            p_workspace_id: workspace.id,
+            p_name: accountName.trim(),
+            p_account_type: accountType,
+            p_initial_balance: parsedBalance,
+            p_currency: currency,
+          });
 
       if (rpcError) {
         throw new Error(rpcError.message);
       }
 
-   resetForm();
-     await loadAccounts();
-      } catch (error: any) {
-     setGlobalError(error.message || "No pudimos crear la cuenta.");
-     } finally {
-     setIsSaving(false);
-     }
+      const successText = editingAccountId
+        ? "Cuenta actualizada."
+        : "Cuenta creada.";
+      resetForm();
+      setSuccessMessage(successText);
+      await loadAccounts();
+    } catch (error: any) {
+      setGlobalError(
+        error.message ||
+          (editingAccountId
+            ? "No pudimos actualizar la cuenta."
+            : "No pudimos crear la cuenta.")
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const archiveAccount = async (account: AccountBalance) => {
+    setGlobalError(null);
+    setSuccessMessage(null);
+    setIsSaving(true);
+
+    try {
+      const { error } = await supabase.rpc("archive_financial_account", {
+        p_account_id: account.account_id,
+      });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      if (editingAccountId === account.account_id) {
+        resetForm();
+      }
+      setSuccessMessage("Cuenta eliminada. Su historial se conserva.");
+      await loadAccounts();
+    } catch (error: any) {
+      setGlobalError(error.message || "No pudimos eliminar la cuenta.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleArchiveAccount = (account: AccountBalance) => {
+    const name = account.account_name || account.name || "esta cuenta";
+    confirmDestructiveAction({
+      title: "Eliminar cuenta",
+      message: `Vas a eliminar "${name}" de tus cuentas activas. Sus check-ins anteriores seguirán disponibles en el historial.`,
+      onConfirm: () => archiveAccount(account),
+    });
   };
 
   if (isLoading) {
@@ -366,6 +426,7 @@ export default function AccountsScreen() {
         style={styles.keyboardView}
       >
         <ScrollView
+          ref={scrollViewRef}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
           refreshControl={
@@ -403,6 +464,13 @@ export default function AccountsScreen() {
             </View>
           )}
 
+          {successMessage && (
+            <View style={styles.successAlert}>
+              <Feather name="check-circle" size={18} color="#86EFAC" />
+              <Text style={styles.successAlertText}>{successMessage}</Text>
+            </View>
+          )}
+
           <View style={styles.summaryGrid}>
             <SummaryCard
               label="Disponible"
@@ -426,10 +494,7 @@ export default function AccountsScreen() {
           {!showCreateForm ? (
             <TouchableOpacity
               style={styles.addAccountButton}
-              onPress={() => {
-                setGlobalError(null);
-                setShowCreateForm(true);
-              }}
+              onPress={() => openAccountForm()}
               activeOpacity={0.85}
             >
               <Feather name="plus-circle" size={20} color="#FFFFFF" />
@@ -439,9 +504,13 @@ export default function AccountsScreen() {
             <View style={styles.formCard}>
               <View style={styles.formHeader}>
                 <View>
-                  <Text style={styles.formTitle}>Nueva cuenta</Text>
+                  <Text style={styles.formTitle}>
+                    {editingAccountId ? "Editar cuenta" : "Nueva cuenta"}
+                  </Text>
                   <Text style={styles.formSubtitle}>
-                    Se creará con un saldo inicial.
+                    {editingAccountId
+                      ? "Actualiza sus datos y saldo actual."
+                      : "Se creará con un saldo inicial."}
                   </Text>
                 </View>
 
@@ -498,7 +567,12 @@ export default function AccountsScreen() {
               <View style={styles.formGroup}>
                 <Text style={styles.label}>Nombre de la cuenta</Text>
 
-                <View style={styles.inputWrapper}>
+                <View
+                  style={[
+                    styles.inputWrapper,
+                    fieldErrors.name && styles.inputWrapperError,
+                  ]}
+                >
                   <Feather
                     name="edit-2"
                     size={20}
@@ -511,21 +585,37 @@ export default function AccountsScreen() {
                     placeholder="Ej. BBVA, Caja, CETES, Tarjeta"
                     placeholderTextColor="#64748B"
                     value={accountName}
-                    onChangeText={setAccountName}
+                    onChangeText={(value) => {
+                      setAccountName(value);
+                      setFieldErrors((current) => ({
+                        ...current,
+                        name: undefined,
+                      }));
+                    }}
                     autoCapitalize="words"
                     editable={!isSaving}
                   />
                 </View>
+                <FieldError message={fieldErrors.name} />
               </View>
 
               <View style={styles.formGroup}>
                 <Text style={styles.label}>
                   {accountType === "credit"
-                    ? "Deuda inicial"
-                    : "Saldo inicial"}
+                    ? editingAccountId
+                      ? "Deuda actual"
+                      : "Deuda inicial"
+                    : editingAccountId
+                      ? "Saldo actual"
+                      : "Saldo inicial"}
                 </Text>
 
-                <View style={styles.inputWrapper}>
+                <View
+                  style={[
+                    styles.inputWrapper,
+                    fieldErrors.balance && styles.inputWrapperError,
+                  ]}
+                >
                   <Text style={styles.currencyPrefix}>$</Text>
 
                   <TextInput
@@ -533,11 +623,18 @@ export default function AccountsScreen() {
                     placeholder="0.00"
                     placeholderTextColor="#64748B"
                     value={initialBalance}
-                    onChangeText={setInitialBalance}
+                    onChangeText={(value) => {
+                      setInitialBalance(formatMoneyInput(value));
+                      setFieldErrors((current) => ({
+                        ...current,
+                        balance: undefined,
+                      }));
+                    }}
                     keyboardType="decimal-pad"
                     editable={!isSaving}
                   />
                 </View>
+                <FieldError message={fieldErrors.balance} />
 
                 {accountType === "credit" && (
                   <Text style={styles.helpText}>
@@ -552,7 +649,7 @@ export default function AccountsScreen() {
                   styles.primaryButton,
                   isSaving && styles.primaryButtonDisabled,
                 ]}
-                onPress={handleCreateAccount}
+                onPress={handleSaveAccount}
                 disabled={isSaving}
                 activeOpacity={0.85}
               >
@@ -560,7 +657,9 @@ export default function AccountsScreen() {
                   <ActivityIndicator color="#FFFFFF" size="small" />
                 ) : (
                   <>
-                    <Text style={styles.primaryButtonText}>Guardar cuenta</Text>
+                    <Text style={styles.primaryButtonText}>
+                      {editingAccountId ? "Guardar cambios" : "Guardar cuenta"}
+                    </Text>
                     <Feather name="check" size={20} color="#FFFFFF" />
                   </>
                 )}
@@ -580,6 +679,9 @@ export default function AccountsScreen() {
                   key={account.account_id}
                   account={account}
                   currency={currency}
+                  isSaving={isSaving}
+                  onEdit={() => openAccountForm(account)}
+                  onArchive={() => handleArchiveAccount(account)}
                 />
               ))
             ) : (
@@ -599,6 +701,9 @@ export default function AccountsScreen() {
                   key={account.account_id}
                   account={account}
                   currency={currency}
+                  isSaving={isSaving}
+                  onEdit={() => openAccountForm(account)}
+                  onArchive={() => handleArchiveAccount(account)}
                 />
               ))
             ) : (
@@ -635,34 +740,62 @@ function SummaryCard({
 function AccountRow({
   account,
   currency,
+  isSaving,
+  onEdit,
+  onArchive,
 }: {
   account: AccountBalance;
   currency: string;
+  isSaving: boolean;
+  onEdit: () => void;
+  onArchive: () => void;
 }) {
   const accountName = account.account_name || account.name || "Cuenta";
 
   return (
     <View style={styles.accountRow}>
-      <View style={styles.accountLeft}>
-        <View style={styles.accountIcon}>
-          <Feather
-            name={getAccountIcon(account.account_type)}
-            size={18}
-            color="#0b9387"
-          />
+      <View style={styles.accountRowTop}>
+        <View style={styles.accountLeft}>
+          <View style={styles.accountIcon}>
+            <Feather
+              name={getAccountIcon(account.account_type)}
+              size={18}
+              color="#0b9387"
+            />
+          </View>
+
+          <View style={styles.accountInfo}>
+            <Text style={styles.accountName}>{accountName}</Text>
+            <Text style={styles.accountType}>
+              {getAccountTypeLabel(account.account_type)}
+            </Text>
+          </View>
         </View>
 
-        <View style={styles.accountInfo}>
-          <Text style={styles.accountName}>{accountName}</Text>
-          <Text style={styles.accountType}>
-            {getAccountTypeLabel(account.account_type)}
-          </Text>
-        </View>
+        <Text style={styles.accountBalance}>
+          {formatMoney(Number(account.balance || 0), currency)}
+        </Text>
       </View>
 
-      <Text style={styles.accountBalance}>
-        {formatMoney(Number(account.balance || 0), currency)}
-      </Text>
+      <View style={styles.accountActions}>
+        <TouchableOpacity
+          style={styles.accountActionButton}
+          onPress={onEdit}
+          disabled={isSaving}
+        >
+          <Feather name="edit-3" size={15} color="#0b9387" />
+          <Text style={styles.accountActionText}>Editar</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.accountDangerButton}
+          onPress={onArchive}
+          disabled={isSaving}
+        >
+          <Feather name="trash-2" size={15} color="#FCA5A5" />
+          <Text style={styles.accountDangerText}>Eliminar</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
@@ -762,6 +895,25 @@ const styles = StyleSheet.create({
 
   errorAlertText: {
     color: "#FCA5A5",
+    marginLeft: 12,
+    fontSize: 14,
+    fontWeight: "500",
+    flex: 1,
+  },
+
+  successAlert: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(34, 197, 94, 0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(34, 197, 94, 0.3)",
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 24,
+  },
+
+  successAlertText: {
+    color: "#86EFAC",
     marginLeft: 12,
     fontSize: 14,
     fontWeight: "500",
@@ -914,6 +1066,11 @@ const styles = StyleSheet.create({
     height: 54,
   },
 
+  inputWrapperError: {
+    borderColor: "#EF4444",
+    borderWidth: 1.5,
+  },
+
   inputIcon: {
     marginRight: 12,
   },
@@ -988,6 +1145,9 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     padding: 16,
     marginBottom: 12,
+  },
+
+  accountRowTop: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
@@ -1030,6 +1190,50 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 15,
     fontWeight: "800",
+  },
+
+  accountActions: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 14,
+  },
+
+  accountActionButton: {
+    flex: 1,
+    minHeight: 42,
+    borderRadius: 13,
+    backgroundColor: "rgba(11,147,135,0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(11,147,135,0.35)",
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 7,
+  },
+
+  accountActionText: {
+    color: "#0b9387",
+    fontSize: 13,
+    fontWeight: "900",
+  },
+
+  accountDangerButton: {
+    flex: 1,
+    minHeight: 42,
+    borderRadius: 13,
+    backgroundColor: "rgba(239,68,68,0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(239,68,68,0.3)",
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 7,
+  },
+
+  accountDangerText: {
+    color: "#FCA5A5",
+    fontSize: 13,
+    fontWeight: "900",
   },
 
   emptyState: {

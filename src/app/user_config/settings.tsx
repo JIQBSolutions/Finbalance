@@ -4,7 +4,6 @@ import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   RefreshControl,
@@ -16,7 +15,9 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { FieldError } from "../../components/FieldError";
 import { FinbalanceLogo } from "../../components/FinbalanceLogo";
+import { confirmDestructiveAction } from "../../lib/confirm";
 import { supabase } from "../../lib/supabase";
 import {
   getCurrentWorkspace,
@@ -65,11 +66,19 @@ export default function SettingsScreen() {
   const [newWorkspaceType, setNewWorkspaceType] =
     useState<WorkspaceType>("business");
   const [newWorkspaceCurrency, setNewWorkspaceCurrency] = useState("MXN");
+  const [newWorkspaceErrors, setNewWorkspaceErrors] = useState<{
+    name?: string;
+    currency?: string;
+  }>({});
 
   const [editWorkspaceName, setEditWorkspaceName] = useState("");
   const [editWorkspaceType, setEditWorkspaceType] =
     useState<WorkspaceType>("business");
   const [editWorkspaceCurrency, setEditWorkspaceCurrency] = useState("MXN");
+  const [editWorkspaceErrors, setEditWorkspaceErrors] = useState<{
+    name?: string;
+    currency?: string;
+  }>({});
 
   const loadSettings = useCallback(async () => {
     setGlobalError(null);
@@ -119,6 +128,7 @@ export default function SettingsScreen() {
     setNewWorkspaceCurrency("MXN");
     setShowCreateForm(false);
     setGlobalError(null);
+    setNewWorkspaceErrors({});
   };
 
   const validateWorkspaceForm = (
@@ -126,19 +136,16 @@ export default function SettingsScreen() {
     currency: string,
     mode: "create" | "edit"
   ) => {
+    const nextErrors: { name?: string; currency?: string } = {};
+
     if (!name.trim()) {
-      setGlobalError("Ingresa el nombre del workspace.");
-      return false;
+      nextErrors.name = "Ingresa el nombre del workspace.";
+    } else if (name.trim().length > 60) {
+      nextErrors.name = "El nombre no puede exceder 60 caracteres.";
     }
 
-    if (name.trim().length > 60) {
-      setGlobalError("El nombre del workspace no puede exceder 60 caracteres.");
-      return false;
-    }
-
-    if (!currency.trim() || currency.trim().length !== 3) {
-      setGlobalError("La moneda debe tener 3 caracteres.");
-      return false;
+    if (!CURRENCIES.includes(currency.trim().toUpperCase())) {
+      nextErrors.currency = "Selecciona MXN o USD.";
     }
 
     if (mode === "create") {
@@ -148,12 +155,17 @@ export default function SettingsScreen() {
       );
 
       if (duplicatedName) {
-        setGlobalError("Ya tienes un workspace activo con ese nombre.");
-        return false;
+        nextErrors.name = "Ya tienes un workspace activo con ese nombre.";
       }
     }
 
-    return true;
+    if (mode === "create") {
+      setNewWorkspaceErrors(nextErrors);
+    } else {
+      setEditWorkspaceErrors(nextErrors);
+    }
+
+    return Object.keys(nextErrors).length === 0;
   };
 
   const handleCreateWorkspace = async () => {
@@ -281,21 +293,11 @@ export default function SettingsScreen() {
   };
 
   const handleArchiveWorkspace = (workspace: Workspace) => {
-    Alert.alert(
-      "Eliminar workspace",
-      `Vas a eliminar "${workspace.name}". No podrás verlo en la app, pero sus registros quedarán guardados en la base de datos.`,
-      [
-        {
-          text: "Cancelar",
-          style: "cancel",
-        },
-        {
-          text: "Eliminar",
-          style: "destructive",
-          onPress: () => archiveWorkspace(workspace.id),
-        },
-      ]
-    );
+    confirmDestructiveAction({
+      title: "Eliminar workspace",
+      message: `Vas a eliminar "${workspace.name}". No podrás verlo en la app, pero sus registros quedarán guardados en la base de datos.`,
+      onConfirm: () => archiveWorkspace(workspace.id),
+    });
   };
 
   const handleLogout = async () => {
@@ -403,6 +405,7 @@ export default function SettingsScreen() {
                   setShowEditForm((prev) => !prev);
                   setShowCreateForm(false);
                   setGlobalError(null);
+                  setEditWorkspaceErrors({});
                 }}
                 disabled={!currentWorkspace || isSaving}
               >
@@ -425,17 +428,31 @@ export default function SettingsScreen() {
             <WorkspaceFormCard
               title="Editar workspace"
               name={editWorkspaceName}
-              setName={setEditWorkspaceName}
+              setName={(value) => {
+                setEditWorkspaceName(value);
+                setEditWorkspaceErrors((current) => ({
+                  ...current,
+                  name: undefined,
+                }));
+              }}
+              fieldErrors={editWorkspaceErrors}
               workspaceType={editWorkspaceType}
               setWorkspaceType={setEditWorkspaceType}
               currency={editWorkspaceCurrency}
-              setCurrency={setEditWorkspaceCurrency}
+              setCurrency={(value) => {
+                setEditWorkspaceCurrency(value);
+                setEditWorkspaceErrors((current) => ({
+                  ...current,
+                  currency: undefined,
+                }));
+              }}
               isSaving={isSaving}
               submitLabel="Guardar cambios"
               onSubmit={handleUpdateCurrentWorkspace}
               onCancel={() => {
                 setShowEditForm(false);
                 setGlobalError(null);
+                setEditWorkspaceErrors({});
               }}
             />
           )}
@@ -447,6 +464,7 @@ export default function SettingsScreen() {
                 setShowCreateForm(true);
                 setShowEditForm(false);
                 setGlobalError(null);
+                setNewWorkspaceErrors({});
               }}
               disabled={isSaving}
               activeOpacity={0.85}
@@ -458,11 +476,24 @@ export default function SettingsScreen() {
             <WorkspaceFormCard
               title="Nuevo workspace"
               name={newWorkspaceName}
-              setName={setNewWorkspaceName}
+              setName={(value) => {
+                setNewWorkspaceName(value);
+                setNewWorkspaceErrors((current) => ({
+                  ...current,
+                  name: undefined,
+                }));
+              }}
+              fieldErrors={newWorkspaceErrors}
               workspaceType={newWorkspaceType}
               setWorkspaceType={setNewWorkspaceType}
               currency={newWorkspaceCurrency}
-              setCurrency={setNewWorkspaceCurrency}
+              setCurrency={(value) => {
+                setNewWorkspaceCurrency(value);
+                setNewWorkspaceErrors((current) => ({
+                  ...current,
+                  currency: undefined,
+                }));
+              }}
               isSaving={isSaving}
               submitLabel="Crear workspace"
               onSubmit={handleCreateWorkspace}
@@ -551,6 +582,7 @@ function WorkspaceFormCard({
   title,
   name,
   setName,
+  fieldErrors,
   workspaceType,
   setWorkspaceType,
   currency,
@@ -563,6 +595,7 @@ function WorkspaceFormCard({
   title: string;
   name: string;
   setName: (value: string) => void;
+  fieldErrors: { name?: string; currency?: string };
   workspaceType: WorkspaceType;
   setWorkspaceType: (value: WorkspaceType) => void;
   currency: string;
@@ -607,7 +640,12 @@ function WorkspaceFormCard({
       <View style={styles.formGroup}>
         <Text style={styles.label}>Nombre</Text>
 
-        <View style={styles.inputWrapper}>
+        <View
+          style={[
+            styles.inputWrapper,
+            fieldErrors.name && styles.inputWrapperError,
+          ]}
+        >
           <Feather
             name="layout"
             size={20}
@@ -625,12 +663,18 @@ function WorkspaceFormCard({
             autoCapitalize="words"
           />
         </View>
+        <FieldError message={fieldErrors.name} />
       </View>
 
       <View style={styles.formGroup}>
         <Text style={styles.label}>Moneda</Text>
 
-        <View style={styles.currencyRow}>
+        <View
+          style={[
+            styles.currencyRow,
+            fieldErrors.currency && styles.currencyRowError,
+          ]}
+        >
           {CURRENCIES.map((option) => (
             <TouchableOpacity
               key={option}
@@ -652,6 +696,7 @@ function WorkspaceFormCard({
             </TouchableOpacity>
           ))}
         </View>
+        <FieldError message={fieldErrors.currency} />
       </View>
 
       <TouchableOpacity
@@ -1011,6 +1056,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     height: 54,
   },
+  inputWrapperError: {
+    borderColor: "#EF4444",
+    borderWidth: 1.5,
+  },
   inputIcon: {
     marginRight: 12,
   },
@@ -1024,6 +1073,12 @@ const styles = StyleSheet.create({
   currencyRow: {
     flexDirection: "row",
     gap: 10,
+  },
+  currencyRowError: {
+    borderWidth: 1.5,
+    borderColor: "#EF4444",
+    borderRadius: 14,
+    padding: 5,
   },
   currencyChip: {
     minWidth: 72,

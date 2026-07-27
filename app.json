@@ -1,16 +1,25 @@
 {
   "expo": {
     "name": "Finbalance",
-    "slug": "Finbalance",
+    "slug": "finbalance",
+    "description": "Claridad financiera mediante saldos reales, check-ins y metas.",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "finbalance",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/expo.icon",
+      "bundleIdentifier": "com.jiqbsolutions.finbalance",
+      "buildNumber": "1",
+      "supportsTablet": true,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
+      "package": "com.jiqbsolutions.finbalance",
+      "versionCode": 1,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -39,6 +48,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "dc67bc64-df4a-45e7-a923-4a0b89f75304"
+      }
+    },
+    "owner": "finbalance2"
   }
 }

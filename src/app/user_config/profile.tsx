@@ -15,6 +15,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { FieldError } from "../../components/FieldError";
 import { FinbalanceLogo } from "../../components/FinbalanceLogo";
 import { supabase } from "../../lib/supabase";
 
@@ -66,6 +67,7 @@ export default function ProfileScreen() {
 
   const [globalError, setGlobalError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [nameError, setNameError] = useState<string | null>(null);
 
   const initials = useMemo(() => getInitials(fullName, email), [fullName, email]);
 
@@ -123,12 +125,12 @@ export default function ProfileScreen() {
     const cleanName = fullName.trim();
 
     if (!cleanName) {
-      setGlobalError("El nombre es obligatorio.");
+      setNameError("El nombre es obligatorio.");
       return false;
     }
 
     if (cleanName.length > 75) {
-      setGlobalError("El nombre no puede exceder 75 caracteres.");
+      setNameError("El nombre no puede exceder 75 caracteres.");
       return false;
     }
 
@@ -136,7 +138,7 @@ export default function ProfileScreen() {
       /^[A-Za-zÁÉÍÓÚáéíóúÑñ]+(?: [A-Za-zÁÉÍÓÚáéíóúÑñ]+)*$/;
 
     if (!nameRegex.test(cleanName)) {
-      setGlobalError("El nombre solo puede contener letras y espacios.");
+      setNameError("El nombre solo puede contener letras y espacios.");
       return false;
     }
 
@@ -283,7 +285,12 @@ export default function ProfileScreen() {
             <View style={styles.formGroup}>
               <Text style={styles.label}>Nombre completo</Text>
 
-              <View style={styles.inputWrapper}>
+              <View
+                style={[
+                  styles.inputWrapper,
+                  nameError && styles.inputWrapperError,
+                ]}
+              >
                 <Feather
                   name="user"
                   size={20}
@@ -296,11 +303,15 @@ export default function ProfileScreen() {
                   placeholder="Tu nombre"
                   placeholderTextColor="#64748B"
                   value={fullName}
-                  onChangeText={setFullName}
+                  onChangeText={(value) => {
+                    setFullName(value);
+                    setNameError(null);
+                  }}
                   editable={!isSaving}
                   autoCapitalize="words"
                 />
               </View>
+              <FieldError message={nameError} />
             </View>
 
             <View style={styles.readOnlyField}>
@@ -362,9 +373,7 @@ export default function ProfileScreen() {
 
             <TouchableOpacity
               style={styles.settingRow}
-              onPress={() =>
-                setGlobalError("El cambio de contraseña lo agregaremos después.")
-              }
+              onPress={() => router.push("/auth/update-password")}
               disabled={isSaving}
             >
               <View style={styles.settingLeft}>
@@ -375,7 +384,7 @@ export default function ProfileScreen() {
                 <View>
                   <Text style={styles.settingTitle}>Cambiar contraseña</Text>
                   <Text style={styles.settingDescription}>
-                    Próximamente disponible.
+                    Actualiza tus credenciales de acceso.
                   </Text>
                 </View>
               </View>
@@ -592,6 +601,10 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     paddingHorizontal: 16,
     height: 54,
+  },
+  inputWrapperError: {
+    borderColor: "#EF4444",
+    borderWidth: 1.5,
   },
   inputIcon: {
     marginRight: 12,

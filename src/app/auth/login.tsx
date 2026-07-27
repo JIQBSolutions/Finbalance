@@ -219,9 +219,12 @@ export default function LoginScreen() {
               </View>
 
               <TouchableOpacity
-                onPress={() => {
-                  setGlobalError("La recuperación de contraseña la agregaremos después.");
-                }}
+                onPress={() =>
+                  router.push({
+                    pathname: "/auth/forgot-password",
+                    params: { email: email.trim() },
+                  })
+                }
                 style={styles.forgotPasswordButton}
               >
                 <Text style={styles.forgotPasswordText}>

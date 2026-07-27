@@ -318,7 +318,8 @@ async function fetchDashboardTrends(workspaceId: string) {
   const { data: accountsData, error: accountsError } = await supabase
     .from("accounts")
     .select("id, account_type")
-    .eq("workspace_id", workspaceId);
+    .eq("workspace_id", workspaceId)
+    .eq("is_active", true);
 
   if (accountsError) {
     throw new Error(accountsError.message);

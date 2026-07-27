@@ -1,7 +1,7 @@
 import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
     ActivityIndicator,
     KeyboardAvoidingView,
@@ -15,7 +15,16 @@ import {
     TouchableOpacity,
     View,
 } from "react-native";
+import { FieldError } from "../../components/FieldError";
 import { FinbalanceLogo } from "../../components/FinbalanceLogo";
+import { confirmDestructiveAction } from "../../lib/confirm";
+import {
+  formatDateInput,
+  formatIsoDateForInput,
+  formatMoneyInput,
+  parseDateInputToIso,
+  parseMoneyInput,
+} from "../../lib/form-formats";
 import { supabase } from "../../lib/supabase";
 import { getCurrentWorkspace } from "../../lib/workspaces";
 
@@ -69,29 +78,6 @@ function formatMoney(amount: number, currency = "MXN") {
   }).format(amount);
 }
 
-function parseMoney(value: string) {
-  const cleanValue = value.trim().replace(/\s/g, "");
-
-  if (!cleanValue) return null;
-
-  const hasComma = cleanValue.includes(",");
-  const hasDot = cleanValue.includes(".");
-
-  let normalizedValue = cleanValue;
-
-  if (hasComma && hasDot) {
-    normalizedValue = cleanValue.replace(/,/g, "");
-  } else if (hasComma) {
-    normalizedValue = cleanValue.replace(",", ".");
-  }
-
-  const numberValue = Number(normalizedValue);
-
-  if (!Number.isFinite(numberValue)) return null;
-
-  return numberValue;
-}
-
 function formatDate(dateString?: string | null) {
   if (!dateString) return "Sin fecha objetivo";
 
@@ -104,18 +90,6 @@ function formatDate(dateString?: string | null) {
     month: "short",
     year: "numeric",
   }).format(date);
-}
-
-function isValidDateInput(value: string) {
-  if (!value.trim()) return true;
-
-  const regex = /^\d{4}-\d{2}-\d{2}$/;
-
-  if (!regex.test(value.trim())) return false;
-
-  const date = new Date(`${value.trim()}T00:00:00`);
-
-  return !Number.isNaN(date.getTime());
 }
 
 function getGoalTypeLabel(type: GoalType) {
@@ -232,6 +206,7 @@ function getDeadlineLabel(daysRemaining: number | null) {
 
 export default function GoalsScreen() {
   const router = useRouter();
+  const scrollViewRef = useRef<ScrollView>(null);
 
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [goals, setGoals] = useState<FinancialGoal[]>([]);
@@ -241,7 +216,11 @@ export default function GoalsScreen() {
   const [isSaving, setIsSaving] = useState(false);
 
   const [globalError, setGlobalError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [editingGoalDetailsId, setEditingGoalDetailsId] = useState<string | null>(
+    null
+  );
 
   const [goalName, setGoalName] = useState("");
   const [goalType, setGoalType] = useState<GoalType>("savings_goal");
@@ -249,9 +228,19 @@ export default function GoalsScreen() {
   const [currentAmount, setCurrentAmount] = useState("");
   const [targetDate, setTargetDate] = useState("");
   const [description, setDescription] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<{
+    name?: string;
+    targetAmount?: string;
+    currentAmount?: string;
+    targetDate?: string;
+    description?: string;
+  }>({});
 
   const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
   const [editingAmount, setEditingAmount] = useState("");
+  const [editingAmountError, setEditingAmountError] = useState<string | null>(
+    null
+  );
 
   const currency = workspace?.currency || "MXN";
 
@@ -339,59 +328,98 @@ export default function GoalsScreen() {
     setTargetDate("");
     setDescription("");
     setShowCreateForm(false);
+    setEditingGoalDetailsId(null);
     setGlobalError(null);
+    setFieldErrors({});
+  };
+
+  const openGoalForm = (goal?: FinancialGoal) => {
+    setGlobalError(null);
+    setSuccessMessage(null);
+    setEditingGoalId(null);
+    setEditingAmount("");
+    setEditingAmountError(null);
+    setFieldErrors({});
+
+    if (goal) {
+      setEditingGoalDetailsId(goal.id);
+      setGoalName(goal.name);
+      setGoalType(goal.goal_type);
+      setTargetAmount(
+        formatMoneyInput(String(Number(goal.target_amount || 0)))
+      );
+      setCurrentAmount(
+        formatMoneyInput(String(Number(goal.current_amount || 0)))
+      );
+      setTargetDate(formatIsoDateForInput(goal.target_date));
+      setDescription(goal.description || "");
+    } else {
+      setEditingGoalDetailsId(null);
+      setGoalName("");
+      setGoalType("savings_goal");
+      setTargetAmount("");
+      setCurrentAmount("");
+      setTargetDate("");
+      setDescription("");
+    }
+
+    setShowCreateForm(true);
+    requestAnimationFrame(() => {
+      scrollViewRef.current?.scrollTo({ y: 360, animated: true });
+    });
   };
 
   const validateGoal = () => {
+    const nextErrors: {
+      name?: string;
+      targetAmount?: string;
+      currentAmount?: string;
+      targetDate?: string;
+      description?: string;
+    } = {};
+
     if (!workspace) {
       setGlobalError("No encontramos un workspace activo.");
       return false;
     }
 
     if (!goalName.trim()) {
-      setGlobalError("Ingresa el nombre de la meta.");
-      return false;
+      nextErrors.name = "Ingresa el nombre de la meta.";
+    } else if (goalName.trim().length > 60) {
+      nextErrors.name = "El nombre no puede exceder 60 caracteres.";
     }
 
-    if (goalName.trim().length > 60) {
-      setGlobalError("El nombre de la meta no puede exceder 60 caracteres.");
-      return false;
-    }
-
-    const parsedTarget = parseMoney(targetAmount);
+    const parsedTarget = parseMoneyInput(targetAmount);
 
     if (parsedTarget === null || parsedTarget <= 0) {
-      setGlobalError("El monto objetivo debe ser mayor a 0.");
-      return false;
+      nextErrors.targetAmount = "El monto objetivo debe ser mayor a 0.";
     }
 
-    const parsedCurrent = parseMoney(currentAmount || "0");
+    const parsedCurrent = parseMoneyInput(currentAmount || "0");
 
-    if (parsedCurrent === null || parsedCurrent < 0) {
-      setGlobalError("El avance actual debe ser un número válido.");
-      return false;
+    if (parsedCurrent === null) {
+      nextErrors.currentAmount = "Ingresa un avance válido.";
+    } else if (parsedTarget !== null && parsedCurrent > parsedTarget) {
+      nextErrors.currentAmount =
+        "El avance no puede ser mayor al monto objetivo.";
     }
 
-    if (parsedCurrent > parsedTarget) {
-      setGlobalError("El avance actual no puede ser mayor al monto objetivo.");
-      return false;
-    }
-
-    if (!isValidDateInput(targetDate)) {
-      setGlobalError("La fecha objetivo debe tener formato YYYY-MM-DD.");
-      return false;
+    if (targetDate.trim() && !parseDateInputToIso(targetDate)) {
+      nextErrors.targetDate = "Ingresa una fecha válida en formato DD/MM/AAAA.";
     }
 
     if (description.trim().length > 180) {
-      setGlobalError("La descripción no puede exceder 180 caracteres.");
-      return false;
+      nextErrors.description =
+        "La descripción no puede exceder 180 caracteres.";
     }
 
-    return true;
+    setFieldErrors(nextErrors);
+    return Object.keys(nextErrors).length === 0;
   };
 
-  const handleCreateGoal = async () => {
+  const handleSaveGoal = async () => {
     setGlobalError(null);
+    setSuccessMessage(null);
 
     if (!validateGoal()) return;
 
@@ -412,28 +440,50 @@ export default function GoalsScreen() {
         throw new Error("No encontramos un workspace activo.");
       }
 
-      const parsedTarget = parseMoney(targetAmount) || 0;
-      const parsedCurrent = parseMoney(currentAmount || "0") || 0;
+      const parsedTarget = parseMoneyInput(targetAmount) || 0;
+      const parsedCurrent = parseMoneyInput(currentAmount || "0") || 0;
 
-      const { error } = await supabase.from("financial_goals").insert({
-        workspace_id: workspace.id,
+      const goalValues = {
         name: goalName.trim(),
         goal_type: goalType,
         target_amount: parsedTarget,
         current_amount: parsedCurrent,
-        target_date: targetDate.trim() ? targetDate.trim() : null,
+        target_date: targetDate.trim()
+          ? parseDateInputToIso(targetDate)
+          : null,
         description: description.trim() ? description.trim() : null,
         is_completed: parsedCurrent >= parsedTarget,
-      });
+        updated_at: new Date().toISOString(),
+      };
+
+      const { error } = editingGoalDetailsId
+        ? await supabase
+            .from("financial_goals")
+            .update(goalValues)
+            .eq("id", editingGoalDetailsId)
+            .eq("workspace_id", workspace.id)
+        : await supabase.from("financial_goals").insert({
+            workspace_id: workspace.id,
+            ...goalValues,
+          });
 
       if (error) {
         throw new Error(error.message);
       }
 
+      const successText = editingGoalDetailsId
+        ? "Meta actualizada."
+        : "Meta creada.";
       resetForm();
+      setSuccessMessage(successText);
       await loadGoals();
     } catch (error: any) {
-      setGlobalError(error.message || "No pudimos crear la meta.");
+      setGlobalError(
+        error.message ||
+          (editingGoalDetailsId
+            ? "No pudimos actualizar la meta."
+            : "No pudimos crear la meta.")
+      );
     } finally {
       setIsSaving(false);
     }
@@ -441,28 +491,34 @@ export default function GoalsScreen() {
 
   const startEditingProgress = (goal: FinancialGoal) => {
     setEditingGoalId(goal.id);
-    setEditingAmount(String(Number(goal.current_amount || 0)));
+    setEditingAmount(
+      formatMoneyInput(String(Number(goal.current_amount || 0)))
+    );
+    setEditingAmountError(null);
     setGlobalError(null);
   };
 
   const cancelEditingProgress = () => {
     setEditingGoalId(null);
     setEditingAmount("");
+    setEditingAmountError(null);
     setGlobalError(null);
   };
 
   const handleUpdateProgress = async (goal: FinancialGoal) => {
     setGlobalError(null);
 
-    const parsedAmount = parseMoney(editingAmount);
+    const parsedAmount = parseMoneyInput(editingAmount);
 
-    if (parsedAmount === null || parsedAmount < 0) {
-      setGlobalError("El avance debe ser un número válido.");
+    if (parsedAmount === null) {
+      setEditingAmountError("Ingresa un avance válido.");
       return;
     }
 
     if (parsedAmount > goal.target_amount) {
-      setGlobalError("El avance no puede ser mayor al monto objetivo.");
+      setEditingAmountError(
+        "El avance no puede ser mayor al monto objetivo."
+      );
       return;
     }
 
@@ -476,7 +532,8 @@ export default function GoalsScreen() {
           is_completed: parsedAmount >= goal.target_amount,
           updated_at: new Date().toISOString(),
         })
-        .eq("id", goal.id);
+        .eq("id", goal.id)
+        .eq("workspace_id", goal.workspace_id);
 
       if (error) {
         throw new Error(error.message);
@@ -503,7 +560,8 @@ export default function GoalsScreen() {
           is_completed: true,
           updated_at: new Date().toISOString(),
         })
-        .eq("id", goal.id);
+        .eq("id", goal.id)
+        .eq("workspace_id", goal.workspace_id);
 
       if (error) {
         throw new Error(error.message);
@@ -517,29 +575,47 @@ export default function GoalsScreen() {
     }
   };
 
-  const handleReopenGoal = async (goal: FinancialGoal) => {
+  const deleteGoal = async (goal: FinancialGoal) => {
     setGlobalError(null);
+    setSuccessMessage(null);
     setIsSaving(true);
 
     try {
+      if (!workspace) {
+        throw new Error("No encontramos un workspace activo.");
+      }
+
       const { error } = await supabase
         .from("financial_goals")
-        .update({
-          is_completed: false,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", goal.id);
+        .delete()
+        .eq("id", goal.id)
+        .eq("workspace_id", workspace.id);
 
       if (error) {
         throw new Error(error.message);
       }
 
+      if (editingGoalDetailsId === goal.id) {
+        resetForm();
+      }
+      if (editingGoalId === goal.id) {
+        cancelEditingProgress();
+      }
+      setSuccessMessage("Meta eliminada.");
       await loadGoals();
     } catch (error: any) {
-      setGlobalError(error.message || "No pudimos reabrir la meta.");
+      setGlobalError(error.message || "No pudimos eliminar la meta.");
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleDeleteGoal = (goal: FinancialGoal) => {
+    confirmDestructiveAction({
+      title: "Eliminar meta",
+      message: `Vas a eliminar "${goal.name}" de forma permanente.`,
+      onConfirm: () => deleteGoal(goal),
+    });
   };
 
   if (isLoading) {
@@ -564,6 +640,7 @@ export default function GoalsScreen() {
         style={styles.keyboardView}
       >
         <ScrollView
+          ref={scrollViewRef}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
           refreshControl={
@@ -602,6 +679,13 @@ export default function GoalsScreen() {
             </View>
           )}
 
+          {successMessage && (
+            <View style={styles.successAlert}>
+              <Feather name="check-circle" size={18} color="#86EFAC" />
+              <Text style={styles.successAlertText}>{successMessage}</Text>
+            </View>
+          )}
+
           <View style={styles.summaryCard}>
             <View style={styles.summaryTopRow}>
               <View>
@@ -636,10 +720,7 @@ export default function GoalsScreen() {
           {!showCreateForm ? (
             <TouchableOpacity
               style={styles.addGoalButton}
-              onPress={() => {
-                setGlobalError(null);
-                setShowCreateForm(true);
-              }}
+              onPress={() => openGoalForm()}
               activeOpacity={0.85}
             >
               <Feather name="plus-circle" size={20} color="#FFFFFF" />
@@ -649,9 +730,13 @@ export default function GoalsScreen() {
             <View style={styles.formCard}>
               <View style={styles.formHeader}>
                 <View>
-                  <Text style={styles.formTitle}>Nueva meta</Text>
+                  <Text style={styles.formTitle}>
+                    {editingGoalDetailsId ? "Editar meta" : "Nueva meta"}
+                  </Text>
                   <Text style={styles.formSubtitle}>
-                    Define objetivo, avance y fecha.
+                    {editingGoalDetailsId
+                      ? "Modifica cualquiera de los datos de la meta."
+                      : "Define objetivo, avance y fecha."}
                   </Text>
                 </View>
 
@@ -701,7 +786,12 @@ export default function GoalsScreen() {
               <View style={styles.formGroup}>
                 <Text style={styles.label}>Nombre de la meta</Text>
 
-                <View style={styles.inputWrapper}>
+                <View
+                  style={[
+                    styles.inputWrapper,
+                    fieldErrors.name && styles.inputWrapperError,
+                  ]}
+                >
                   <Feather
                     name="edit-2"
                     size={20}
@@ -718,17 +808,29 @@ export default function GoalsScreen() {
                     }
                     placeholderTextColor="#64748B"
                     value={goalName}
-                    onChangeText={setGoalName}
+                    onChangeText={(value) => {
+                      setGoalName(value);
+                      setFieldErrors((current) => ({
+                        ...current,
+                        name: undefined,
+                      }));
+                    }}
                     autoCapitalize="words"
                     editable={!isSaving}
                   />
                 </View>
+                <FieldError message={fieldErrors.name} />
               </View>
 
               <View style={styles.formGroup}>
                 <Text style={styles.label}>Monto objetivo</Text>
 
-                <View style={styles.inputWrapper}>
+                <View
+                  style={[
+                    styles.inputWrapper,
+                    fieldErrors.targetAmount && styles.inputWrapperError,
+                  ]}
+                >
                   <Text style={styles.currencyPrefix}>$</Text>
 
                   <TextInput
@@ -736,11 +838,18 @@ export default function GoalsScreen() {
                     placeholder="0.00"
                     placeholderTextColor="#64748B"
                     value={targetAmount}
-                    onChangeText={setTargetAmount}
+                    onChangeText={(value) => {
+                      setTargetAmount(formatMoneyInput(value));
+                      setFieldErrors((current) => ({
+                        ...current,
+                        targetAmount: undefined,
+                      }));
+                    }}
                     keyboardType="decimal-pad"
                     editable={!isSaving}
                   />
                 </View>
+                <FieldError message={fieldErrors.targetAmount} />
               </View>
 
               <View style={styles.formGroup}>
@@ -750,7 +859,12 @@ export default function GoalsScreen() {
                     : "Monto ya pagado"}
                 </Text>
 
-                <View style={styles.inputWrapper}>
+                <View
+                  style={[
+                    styles.inputWrapper,
+                    fieldErrors.currentAmount && styles.inputWrapperError,
+                  ]}
+                >
                   <Text style={styles.currencyPrefix}>$</Text>
 
                   <TextInput
@@ -758,17 +872,29 @@ export default function GoalsScreen() {
                     placeholder="0.00"
                     placeholderTextColor="#64748B"
                     value={currentAmount}
-                    onChangeText={setCurrentAmount}
+                    onChangeText={(value) => {
+                      setCurrentAmount(formatMoneyInput(value));
+                      setFieldErrors((current) => ({
+                        ...current,
+                        currentAmount: undefined,
+                      }));
+                    }}
                     keyboardType="decimal-pad"
                     editable={!isSaving}
                   />
                 </View>
+                <FieldError message={fieldErrors.currentAmount} />
               </View>
 
               <View style={styles.formGroup}>
                 <Text style={styles.label}>Fecha objetivo opcional</Text>
 
-                <View style={styles.inputWrapper}>
+                <View
+                  style={[
+                    styles.inputWrapper,
+                    fieldErrors.targetDate && styles.inputWrapperError,
+                  ]}
+                >
                   <Feather
                     name="calendar"
                     size={20}
@@ -778,32 +904,53 @@ export default function GoalsScreen() {
 
                   <TextInput
                     style={styles.input}
-                    placeholder="YYYY-MM-DD"
+                    placeholder="DD/MM/AAAA"
                     placeholderTextColor="#64748B"
                     value={targetDate}
-                    onChangeText={setTargetDate}
+                    onChangeText={(value) => {
+                      setTargetDate(formatDateInput(value));
+                      setFieldErrors((current) => ({
+                        ...current,
+                        targetDate: undefined,
+                      }));
+                    }}
                     autoCapitalize="none"
+                    keyboardType="number-pad"
+                    maxLength={10}
                     editable={!isSaving}
                   />
                 </View>
+                <FieldError message={fieldErrors.targetDate} />
               </View>
 
               <View style={styles.formGroup}>
                 <Text style={styles.label}>Descripción opcional</Text>
 
-                <View style={styles.textAreaWrapper}>
+                <View
+                  style={[
+                    styles.textAreaWrapper,
+                    fieldErrors.description && styles.inputWrapperError,
+                  ]}
+                >
                   <TextInput
                     style={styles.textArea}
                     placeholder="Ej. Meta para separar dinero cada semana."
                     placeholderTextColor="#64748B"
                     value={description}
-                    onChangeText={setDescription}
+                    onChangeText={(value) => {
+                      setDescription(value);
+                      setFieldErrors((current) => ({
+                        ...current,
+                        description: undefined,
+                      }));
+                    }}
                     multiline
                     numberOfLines={3}
                     textAlignVertical="top"
                     editable={!isSaving}
                   />
                 </View>
+                <FieldError message={fieldErrors.description} />
               </View>
 
               <TouchableOpacity
@@ -811,7 +958,7 @@ export default function GoalsScreen() {
                   styles.primaryButton,
                   isSaving && styles.primaryButtonDisabled,
                 ]}
-                onPress={handleCreateGoal}
+                onPress={handleSaveGoal}
                 disabled={isSaving}
                 activeOpacity={0.85}
               >
@@ -819,7 +966,9 @@ export default function GoalsScreen() {
                   <ActivityIndicator color="#FFFFFF" size="small" />
                 ) : (
                   <>
-                    <Text style={styles.primaryButtonText}>Guardar meta</Text>
+                    <Text style={styles.primaryButtonText}>
+                      {editingGoalDetailsId ? "Guardar cambios" : "Guardar meta"}
+                    </Text>
                     <Feather name="check" size={20} color="#FFFFFF" />
                   </>
                 )}
@@ -843,13 +992,19 @@ export default function GoalsScreen() {
                   currency={currency}
                   isEditing={editingGoalId === goal.id}
                   editingAmount={editingAmount}
-                  setEditingAmount={setEditingAmount}
+                  editingAmountError={editingAmountError}
+                  setEditingAmount={(value) => {
+                    setEditingAmount(formatMoneyInput(value));
+                    setEditingAmountError(null);
+                  }}
                   isSaving={isSaving}
                   onStartEdit={() => startEditingProgress(goal)}
                   onCancelEdit={cancelEditingProgress}
                   onSaveEdit={() => handleUpdateProgress(goal)}
                   onComplete={() => handleCompleteGoal(goal)}
-                  onReopen={() => handleReopenGoal(goal)}
+                  onReopen={() => startEditingProgress(goal)}
+                  onEditDetails={() => openGoalForm(goal)}
+                  onDelete={() => handleDeleteGoal(goal)}
                 />
               ))
             ) : (
@@ -873,13 +1028,19 @@ export default function GoalsScreen() {
                   currency={currency}
                   isEditing={editingGoalId === goal.id}
                   editingAmount={editingAmount}
-                  setEditingAmount={setEditingAmount}
+                  editingAmountError={editingAmountError}
+                  setEditingAmount={(value) => {
+                    setEditingAmount(formatMoneyInput(value));
+                    setEditingAmountError(null);
+                  }}
                   isSaving={isSaving}
                   onStartEdit={() => startEditingProgress(goal)}
                   onCancelEdit={cancelEditingProgress}
                   onSaveEdit={() => handleUpdateProgress(goal)}
                   onComplete={() => handleCompleteGoal(goal)}
-                  onReopen={() => handleReopenGoal(goal)}
+                  onReopen={() => startEditingProgress(goal)}
+                  onEditDetails={() => openGoalForm(goal)}
+                  onDelete={() => handleDeleteGoal(goal)}
                 />
               ))
             ) : (
@@ -897,6 +1058,7 @@ function GoalCard({
   currency,
   isEditing,
   editingAmount,
+  editingAmountError,
   setEditingAmount,
   isSaving,
   onStartEdit,
@@ -904,11 +1066,14 @@ function GoalCard({
   onSaveEdit,
   onComplete,
   onReopen,
+  onEditDetails,
+  onDelete,
 }: {
   goal: FinancialGoal;
   currency: string;
   isEditing: boolean;
   editingAmount: string;
+  editingAmountError: string | null;
   setEditingAmount: (value: string) => void;
   isSaving: boolean;
   onStartEdit: () => void;
@@ -916,6 +1081,8 @@ function GoalCard({
   onSaveEdit: () => void;
   onComplete: () => void;
   onReopen: () => void;
+  onEditDetails: () => void;
+  onDelete: () => void;
 }) {
   const progress =
     goal.target_amount > 0
@@ -998,7 +1165,12 @@ function GoalCard({
         <View style={styles.editProgressBox}>
           <Text style={styles.label}>Nuevo avance</Text>
 
-          <View style={styles.inputWrapper}>
+          <View
+            style={[
+              styles.inputWrapper,
+              editingAmountError && styles.inputWrapperError,
+            ]}
+          >
             <Text style={styles.currencyPrefix}>$</Text>
 
             <TextInput
@@ -1011,6 +1183,7 @@ function GoalCard({
               editable={!isSaving}
             />
           </View>
+          <FieldError message={editingAmountError} />
 
           <View style={styles.editActions}>
             <TouchableOpacity
@@ -1034,11 +1207,11 @@ function GoalCard({
         <View style={styles.goalActions}>
           <TouchableOpacity
             style={styles.goalActionButton}
-            onPress={onStartEdit}
+            onPress={onEditDetails}
             disabled={isSaving}
           >
-            <Feather name="edit-3" size={16} color="#0b9387" />
-            <Text style={styles.goalActionText}>Actualizar</Text>
+            <Feather name="edit-2" size={16} color="#0b9387" />
+            <Text style={styles.goalActionText}>Editar meta</Text>
           </TouchableOpacity>
 
           {goal.is_completed ? (
@@ -1051,15 +1224,35 @@ function GoalCard({
               <Text style={styles.goalActionText}>Reabrir</Text>
             </TouchableOpacity>
           ) : (
-            <TouchableOpacity
-              style={styles.goalActionButton}
-              onPress={onComplete}
-              disabled={isSaving}
-            >
-              <Feather name="check-circle" size={16} color="#0b9387" />
-              <Text style={styles.goalActionText}>Completar</Text>
-            </TouchableOpacity>
+            <>
+              <TouchableOpacity
+                style={styles.goalActionButton}
+                onPress={onStartEdit}
+                disabled={isSaving}
+              >
+                <Feather name="edit-3" size={16} color="#0b9387" />
+                <Text style={styles.goalActionText}>Actualizar</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.goalActionButton}
+                onPress={onComplete}
+                disabled={isSaving}
+              >
+                <Feather name="check-circle" size={16} color="#0b9387" />
+                <Text style={styles.goalActionText}>Completar</Text>
+              </TouchableOpacity>
+            </>
           )}
+
+          <TouchableOpacity
+            style={styles.goalDangerButton}
+            onPress={onDelete}
+            disabled={isSaving}
+          >
+            <Feather name="trash-2" size={16} color="#FCA5A5" />
+            <Text style={styles.goalDangerText}>Eliminar</Text>
+          </TouchableOpacity>
         </View>
       )}
     </View>
@@ -1225,6 +1418,25 @@ const styles = StyleSheet.create({
 
   errorAlertText: {
     color: "#FCA5A5",
+    marginLeft: 12,
+    fontSize: 14,
+    fontWeight: "500",
+    flex: 1,
+  },
+
+  successAlert: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(34, 197, 94, 0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(34, 197, 94, 0.3)",
+    padding: 16,
+    borderRadius: 14,
+    marginBottom: 22,
+  },
+
+  successAlertText: {
+    color: "#86EFAC",
     marginLeft: 12,
     fontSize: 14,
     fontWeight: "500",
@@ -1402,6 +1614,11 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     paddingHorizontal: 16,
     height: 54,
+  },
+
+  inputWrapperError: {
+    borderColor: "#EF4444",
+    borderWidth: 1.5,
   },
 
   inputIcon: {
@@ -1692,11 +1909,13 @@ const styles = StyleSheet.create({
 
   goalActions: {
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: 10,
   },
 
   goalActionButton: {
     flex: 1,
+    flexBasis: "46%",
     minHeight: 44,
     borderRadius: 13,
     borderWidth: 1,
@@ -1710,6 +1929,26 @@ const styles = StyleSheet.create({
 
   goalActionText: {
     color: "#0b9387",
+    fontSize: 13,
+    fontWeight: "900",
+  },
+
+  goalDangerButton: {
+    flex: 1,
+    flexBasis: "46%",
+    minHeight: 44,
+    borderRadius: 13,
+    borderWidth: 1,
+    borderColor: "rgba(239,68,68,0.35)",
+    backgroundColor: "rgba(239,68,68,0.08)",
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 7,
+  },
+
+  goalDangerText: {
+    color: "#FCA5A5",
     fontSize: 13,
     fontWeight: "900",
   },

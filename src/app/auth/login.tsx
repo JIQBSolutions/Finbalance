@@ -211,6 +211,7 @@ export default function LoginScreen() {
                   <TouchableOpacity
                     onPress={() => setShowPassword(!showPassword)}
                     style={styles.eyeIcon}
+                    testID="toggle-password-visibility"
                   >
                     <Feather
                       name={showPassword ? "eye-off" : "eye"}
@@ -239,6 +240,7 @@ export default function LoginScreen() {
 
               <View style={styles.footer}>
                 <TouchableOpacity
+                  testID="login-button"
                   style={[styles.primaryButton, isLoading && styles.primaryButtonDisabled]}
                   onPress={handleLogin}
                   disabled={isLoading}

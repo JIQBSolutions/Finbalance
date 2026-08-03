@@ -1,18 +1,16 @@
-import React, { useEffect, useState } from "react";
+import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { LinearGradient } from "expo-linear-gradient";
 import {
   ArrowRight,
   Camera,
   CheckCircle,
   Clock,
   Layers,
-  Sparkles,
   TrendingDown,
-  TrendingUp,
+  TrendingUp
 } from "lucide-react-native";
-import { FinbalanceLogo } from "../components/FinbalanceLogo";
+import React from "react";
 import {
   Pressable,
   SafeAreaView,
@@ -22,6 +20,7 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
+import { FinbalanceLogo } from "../components/FinbalanceLogo";
 
 const chartBars = [42, 38, 51, 47, 63, 58, 72];
 
@@ -65,7 +64,7 @@ export default function LandingScreen() {
               <ArrowRight size={18} color="#0b9387" />
             </Pressable>
 
-            <Pressable onPress={() => router.push("./auth/login")}>
+            <Pressable onPress={() => router.push("./auth/login")} testID="login-button-dashboard">
               <Text style={styles.loginLink}>Ya tengo una cuenta</Text>
             </Pressable>
           </View>

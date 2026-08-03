@@ -1,56 +1,100 @@
-# Welcome to your Expo app 👋
+# Finbalance
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Finbalance es una app Expo para conocer la posición financiera real de un
+negocio o de las finanzas personales a partir de snapshots de saldo. Permite
+trabajar con varios espacios financieros, registrar cuentas, hacer check-ins,
+consultar tendencias e historial y administrar metas de ahorro o pago de deuda.
 
-## Get started
+## Funcionalidades
 
-1. Install dependencies
+- Registro, inicio de sesión, confirmación de correo y recuperación de contraseña.
+- Perfil editable y cambio de contraseña.
+- Workspaces personales o de negocio, con selección, edición y archivado.
+- Cuentas bancarias, efectivo, inversiones y deudas con alta, edición y
+  eliminación lógica.
+- Check-ins operativos que conservan el historial de saldos.
+- Dashboard con balance, patrimonio, distribución y variaciones.
+- Historial filtrable con detalle por cuenta.
+- Metas de ahorro o deuda con creación, edición completa, actualización de
+  avance, finalización, reapertura y eliminación.
+- Deudas vinculadas al saldo real de sus cuentas, con planes por fecha límite,
+  abonos registrados e importes recomendados por semana y por mes.
+
+## Requisitos
+
+- Node.js 20.19 o superior.
+- Un proyecto Supabase con el esquema base de Finbalance.
+- Supabase CLI para aplicar migraciones.
+- Una cuenta Expo/EAS para generar builds móviles.
+
+## Configuración local
+
+1. Instala dependencias:
 
    ```bash
    npm install
    ```
 
-2. Start the app
+2. Copia `.env.example` a `.env` y configura:
 
-   ```bash
-   npx expo start
+   ```dotenv
+   EXPO_PUBLIC_SUPABASE_URL=https://TU_PROYECTO.supabase.co
+   EXPO_PUBLIC_SUPABASE_ANON_KEY=TU_CLAVE_ANON_PUBLICA
    ```
 
-In the output, you'll find options to open the app in a
+3. Aplica las migraciones descritas en `supabase/README.md`.
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+4. Inicia la app:
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+   ```bash
+   npm run web
+   ```
 
-## Get a fresh project
+   Para dispositivo también puedes usar `npm run android` o `npm run ios`.
 
-When you're ready, run:
+## Verificación
 
 ```bash
-npm run reset-project
+npm run typecheck
+npm run build:web
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+`npm run check` ejecuta ambas verificaciones en secuencia.
 
-### Other setup steps
+## Deploy web
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+Genera el sitio estático:
 
-## Learn more
+```bash
+npm run build:web
+```
 
-To learn more about developing your project with Expo, look at the following resources:
+Publica el contenido de `dist/` en un proveedor de hosting estático y configura
+una regla de fallback hacia `index.html` para las rutas de Expo Router.
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+En Supabase Auth agrega las URL públicas permitidas:
 
-## Join the community
+- `https://TU_DOMINIO/auth/update-password`
+- el scheme nativo `finbalance://auth/update-password`
 
-Join our community of developers creating universal apps.
+Configura las dos variables `EXPO_PUBLIC_*` también en el entorno de build del
+proveedor.
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+## Builds móviles con EAS
+
+Después de autenticarte con Expo:
+
+```bash
+eas build:configure
+eas build --platform all --profile production
+```
+
+El identificador inicial configurado es `com.jiqbsolutions.finbalance`. Si la
+organización usa otro dominio, cámbialo en `app.json` antes del primer build que
+se publique en tiendas.
+
+## Seguridad
+
+Las variables `EXPO_PUBLIC_*` se incluyen en el bundle y nunca deben contener
+una `service_role` key. La seguridad de los datos depende de RLS y de las
+funciones autenticadas de Supabase. No publiques `.env`.

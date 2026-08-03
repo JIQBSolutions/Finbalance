@@ -1,21 +1,27 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  SafeAreaView,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { Feather } from "@expo/vector-icons";
-import { supabase } from "../../lib/supabase";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+    ActivityIndicator,
+    KeyboardAvoidingView,
+    Platform,
+    SafeAreaView,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
+} from "react-native";
+import { FieldError } from "../../components/FieldError";
 import { FinbalanceLogo } from "../../components/FinbalanceLogo";
+import {
+  formatMoneyInput,
+  parseMoneyInput,
+} from "../../lib/form-formats";
+import { supabase } from "../../lib/supabase";
+import { getCurrentWorkspace } from "../../lib/workspaces";
 
 type Workspace = {
   id: string;
@@ -50,29 +56,6 @@ function formatMoney(amount: number, currency = "MXN") {
   }).format(amount);
 }
 
-function parseMoney(value: string) {
-  const cleanValue = value.trim().replace(/\s/g, "");
-
-  if (!cleanValue) return null;
-
-  const hasComma = cleanValue.includes(",");
-  const hasDot = cleanValue.includes(".");
-
-  let normalizedValue = cleanValue;
-
-  if (hasComma && hasDot) {
-    normalizedValue = cleanValue.replace(/,/g, "");
-  } else if (hasComma) {
-    normalizedValue = cleanValue.replace(",", ".");
-  }
-
-  const numberValue = Number(normalizedValue);
-
-  if (!Number.isFinite(numberValue)) return null;
-
-  return numberValue;
-}
-
 function getAccountTypeLabel(type: OperationalAccountType) {
   const labels = {
     bank: "Banco",
@@ -101,6 +84,9 @@ export default function CheckInScreen() {
   const [isSaving, setIsSaving] = useState(false);
 
   const [globalError, setGlobalError] = useState<string | null>(null);
+  const [balanceErrors, setBalanceErrors] = useState<Record<string, string>>(
+    {}
+  );
 
   const currency = workspace?.currency || "MXN";
 
@@ -112,7 +98,7 @@ export default function CheckInScreen() {
 
   const newAvailable = useMemo(() => {
     return accounts.reduce((total, account) => {
-      const parsedValue = parseMoney(account.new_balance);
+      const parsedValue = parseMoneyInput(account.new_balance);
       return total + (parsedValue || 0);
     }, 0);
   }, [accounts]);
@@ -133,23 +119,11 @@ export default function CheckInScreen() {
         return;
       }
 
-      const { data: workspaces, error: workspaceError } = await supabase
-        .from("workspaces")
-        .select("id, name, workspace_type, currency")
-        .eq("is_active", true)
-        .order("created_at", { ascending: true })
-        .limit(1);
-
-      if (workspaceError) {
-        throw new Error(workspaceError.message);
-      }
-
-      if (!workspaces || workspaces.length === 0) {
+      const currentWorkspace = await getCurrentWorkspace();
+      if (!currentWorkspace) {
         router.replace("/dashboard/onboarding");
         return;
       }
-
-      const currentWorkspace = workspaces[0] as Workspace;
       setWorkspace(currentWorkspace);
 
       const { data: balances, error: balancesError } = await supabase
@@ -171,7 +145,7 @@ export default function CheckInScreen() {
             account_name: account.account_name || account.name || "Cuenta",
             account_type: account.account_type,
             previous_balance: currentBalance,
-            new_balance: String(currentBalance),
+            new_balance: formatMoneyInput(String(currentBalance)),
           };
         }
       );
@@ -194,10 +168,15 @@ export default function CheckInScreen() {
     setAccounts((prev) =>
       prev.map((account) =>
         account.account_id === accountId
-          ? { ...account, new_balance: value }
+          ? { ...account, new_balance: formatMoneyInput(value) }
           : account
       )
     );
+    setBalanceErrors((current) => {
+      const nextErrors = { ...current };
+      delete nextErrors[accountId];
+      return nextErrors;
+    });
   };
 
   const validateCheckIn = () => {
@@ -213,21 +192,19 @@ export default function CheckInScreen() {
       return false;
     }
 
+    const nextErrors: Record<string, string> = {};
+
     for (const account of accounts) {
-      const balance = parseMoney(account.new_balance);
+      const balance = parseMoneyInput(account.new_balance);
 
       if (balance === null) {
-        setGlobalError(`El saldo de "${account.account_name}" no es válido.`);
-        return false;
-      }
-
-      if (balance < 0) {
-        setGlobalError(`El saldo de "${account.account_name}" no puede ser negativo.`);
-        return false;
+        nextErrors[account.account_id] =
+          "Ingresa un saldo válido. Usa punto sólo para centavos.";
       }
     }
 
-    return true;
+    setBalanceErrors(nextErrors);
+    return Object.keys(nextErrors).length === 0;
   };
 
   const handleSubmitCheckIn = async () => {
@@ -254,7 +231,7 @@ export default function CheckInScreen() {
 
       const snapshots = accounts.map((account) => ({
        account_id: account.account_id,
-       balance: parseMoney(account.new_balance) || 0,
+       balance: parseMoneyInput(account.new_balance) || 0,
      }));
 
       const { error: rpcError } = await supabase.rpc(
@@ -403,7 +380,13 @@ export default function CheckInScreen() {
                   <View style={styles.inputGroup}>
                     <Text style={styles.label}>Saldo actual</Text>
 
-                    <View style={styles.inputWrapper}>
+                    <View
+                      style={[
+                        styles.inputWrapper,
+                        balanceErrors[account.account_id] &&
+                          styles.inputWrapperError,
+                      ]}
+                    >
                       <Text style={styles.currencyPrefix}>$</Text>
 
                       <TextInput
@@ -417,6 +400,9 @@ export default function CheckInScreen() {
                         keyboardType="decimal-pad"
                       />
                     </View>
+                    <FieldError
+                      message={balanceErrors[account.account_id]}
+                    />
                   </View>
                 </View>
               ))
@@ -699,6 +685,11 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     paddingHorizontal: 16,
     height: 54,
+  },
+
+  inputWrapperError: {
+    borderColor: "#EF4444",
+    borderWidth: 1.5,
   },
 
   currencyPrefix: {

@@ -30,6 +30,7 @@ export default function RegisterScreen() {
 
   const [isLoading, setIsLoading] = useState(false);
   const [globalError, setGlobalError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<{ [key: string]: string }>({});
 
   const [passwordScore, setPasswordScore] = useState(0);
@@ -112,6 +113,7 @@ export default function RegisterScreen() {
 
   const handleRegister = async () => {
     setGlobalError(null);
+    setSuccessMessage(null);
 
     if (!validateForm()) {
       setGlobalError("Por favor, corrige los errores antes de continuar.");
@@ -124,7 +126,7 @@ export default function RegisterScreen() {
       const cleanEmail = email.trim().toLowerCase();
       const cleanName = fullName.trim();
 
-      const { error } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email: cleanEmail,
         password,
         options: {
@@ -150,6 +152,14 @@ export default function RegisterScreen() {
           setGlobalError("Ocurrió un error al crear tu cuenta.");
         }
 
+        setIsLoading(false);
+        return;
+      }
+
+      if (!data.session) {
+        setSuccessMessage(
+          "Cuenta creada. Revisa tu correo y confirma tu dirección antes de iniciar sesión."
+        );
         setIsLoading(false);
         return;
       }
@@ -189,6 +199,13 @@ export default function RegisterScreen() {
             <View style={styles.errorAlert}>
               <Feather name="alert-triangle" size={18} color="#FCA5A5" />
               <Text style={styles.errorAlertText}>{globalError}</Text>
+            </View>
+          )}
+
+          {successMessage && (
+            <View style={styles.successAlert}>
+              <Feather name="check-circle" size={18} color="#86EFAC" />
+              <Text style={styles.successAlertText}>{successMessage}</Text>
             </View>
           )}
 
@@ -399,14 +416,20 @@ export default function RegisterScreen() {
                 styles.primaryButton,
                 isLoading && styles.primaryButtonDisabled,
               ]}
-              onPress={handleRegister}
+              onPress={() =>
+                successMessage
+                  ? router.replace("/auth/login")
+                  : handleRegister()
+              }
               disabled={isLoading}
               activeOpacity={0.8}
             >
               {isLoading ? (
                 <ActivityIndicator color="#FFFFFF" size="small" />
               ) : (
-                <Text style={styles.primaryButtonText}>Crear cuenta</Text>
+                <Text style={styles.primaryButtonText}>
+                  {successMessage ? "Ir a iniciar sesión" : "Crear cuenta"}
+                </Text>
               )}
             </TouchableOpacity>
 
@@ -484,6 +507,25 @@ const styles = StyleSheet.create({
 
   errorAlertText: {
     color: "#FCA5A5",
+    marginLeft: 12,
+    fontSize: 14,
+    fontWeight: "500",
+    flex: 1,
+  },
+
+  successAlert: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(34, 197, 94, 0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(34, 197, 94, 0.3)",
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 24,
+  },
+
+  successAlertText: {
+    color: "#86EFAC",
     marginLeft: 12,
     fontSize: 14,
     fontWeight: "500",

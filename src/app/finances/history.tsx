@@ -14,6 +14,7 @@ import {
 } from "react-native";
 import { FinbalanceLogo } from "../../components/FinbalanceLogo";
 import { supabase } from "../../lib/supabase";
+import { getCurrentWorkspace } from "../../lib/workspaces";
 
 type Workspace = {
   id: string;
@@ -72,6 +73,16 @@ type HistoryItem = {
   snapshots_count: number;
   difference: number | null;
   snapshots: SnapshotDetail[];
+};
+
+type PeriodSummary = {
+  label: string;
+  variation: number;
+  description: string;
+  referenceDate: string | null;
+  checkInsCount: number;
+  startAvailable: number | null;
+  endAvailable: number | null;
 };
 
 type FilterType = "all" | CheckInType;
@@ -185,6 +196,120 @@ function getDifferenceLabel(value: number | null, currency: string) {
   return `${prefix}${formatMoney(value, currency)}`;
 }
 
+function getDayStart(dateString?: string) {
+  if (!dateString) return null;
+  const normalizedDate =
+    dateString.length <= 10 ? `${dateString}T00:00:00` : dateString;
+  const date = new Date(normalizedDate);
+  if (Number.isNaN(date.getTime())) return null;
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+function findClosestHistoryItem(
+  items: HistoryItem[],
+  targetDate: Date
+): HistoryItem | null {
+  let closest: HistoryItem | null = null;
+
+  for (const item of items) {
+    const itemDate = getDayStart(item.check_in_date);
+    if (!itemDate) continue;
+
+    if (itemDate.getTime() <= targetDate.getTime()) {
+      if (
+        !closest ||
+        itemDate.getTime() > (getDayStart(closest.check_in_date)?.getTime() ?? 0)
+      ) {
+        closest = item;
+      }
+    }
+  }
+
+  return closest;
+}
+
+function getPeriodSummary(
+  historyItems: HistoryItem[],
+  daysAgo: number,
+  label: string
+) {
+  const latest = historyItems[0];
+  if (!latest) {
+    return {
+      label,
+      variation: 0,
+      description: "No hay registros suficientes.",
+      referenceDate: null,
+      checkInsCount: 0,
+      startAvailable: null,
+      endAvailable: null,
+    };
+  }
+
+  const latestDate = getDayStart(latest.check_in_date);
+  if (!latestDate) {
+    return {
+      label,
+      variation: 0,
+      description: "Fecha no disponible.",
+      referenceDate: null,
+      checkInsCount: 1,
+      startAvailable: null,
+      endAvailable: latest.available,
+    };
+  }
+
+  const targetDate = new Date(latestDate);
+  targetDate.setDate(targetDate.getDate() - daysAgo);
+
+  const prior = findClosestHistoryItem(historyItems, targetDate);
+  if (!prior) {
+    return {
+      label,
+      variation: 0,
+      description: `No hay registros previos dentro de los últimos ${daysAgo} días.`,
+      referenceDate: null,
+      checkInsCount: historyItems.length,
+      startAvailable: null,
+      endAvailable: latest.available,
+    };
+  }
+
+  const relevantItems = historyItems.filter((item) => {
+    const itemDate = getDayStart(item.check_in_date);
+    return itemDate && itemDate.getTime() >= getDayStart(prior.check_in_date)!.getTime();
+  });
+
+  return {
+    label,
+    variation: latest.available - prior.available,
+    description: `De ${formatDate(prior.check_in_date)} a ${formatDate(
+      latest.check_in_date
+    )}`,
+    referenceDate: prior.check_in_date,
+    checkInsCount: relevantItems.length,
+    startAvailable: prior.available,
+    endAvailable: latest.available,
+  };
+}
+
+function isPositivePeriod(value: number) {
+  return value >= 0;
+}
+
+function getPeriodVariationLabel(value: number, currency: string) {
+  if (value === 0) return "Sin cambio";
+  const prefix = value > 0 ? "+" : "";
+  return `${prefix}${formatMoney(value, currency)}`;
+}
+
+function formatTrendText(value: number, currency: string) {
+  if (value === 0) return "Sin cambio";
+  const prefix = value > 0 ? "+" : "";
+  return `${prefix}${formatMoney(value, currency)}`;
+}
+
 export default function HistoryScreen() {
   const router = useRouter();
 
@@ -223,6 +348,20 @@ export default function HistoryScreen() {
       totalChange,
       lastCheckInDate: latest?.check_in_date,
       latestNetWorth: latest?.netWorth || 0,
+    };
+  }, [historyItems]);
+
+  const periodSummaries = useMemo(() => {
+    if (historyItems.length === 0) {
+      return {
+        weekly: getPeriodSummary(historyItems, 7, "Última semana"),
+        monthly: getPeriodSummary(historyItems, 30, "Último mes"),
+      };
+    }
+
+    return {
+      weekly: getPeriodSummary(historyItems, 7, "Última semana"),
+      monthly: getPeriodSummary(historyItems, 30, "Último mes"),
     };
   }, [historyItems]);
 
@@ -346,23 +485,11 @@ export default function HistoryScreen() {
         return;
       }
 
-      const { data: workspaces, error: workspaceError } = await supabase
-        .from("workspaces")
-        .select("id, name, workspace_type, currency")
-        .eq("is_active", true)
-        .order("created_at", { ascending: true })
-        .limit(1);
-
-      if (workspaceError) {
-        throw new Error(workspaceError.message);
-      }
-
-      if (!workspaces || workspaces.length === 0) {
+      const currentWorkspace = await getCurrentWorkspace();
+      if (!currentWorkspace) {
         router.replace("/dashboard/onboarding");
         return;
       }
-
-      const currentWorkspace = workspaces[0] as Workspace;
       setWorkspace(currentWorkspace);
 
       const { data: accountsData, error: accountsError } = await supabase
@@ -525,6 +652,21 @@ export default function HistoryScreen() {
           </View>
         </View>
 
+        <View style={styles.periodSummaryGrid}>
+          <PeriodSummaryCard
+            title="Resumen semanal"
+            summary={periodSummaries.weekly}
+            currency={currency}
+            icon="calendar"
+          />
+          <PeriodSummaryCard
+            title="Resumen mensual"
+            summary={periodSummaries.monthly}
+            currency={currency}
+            icon="bar-chart-2"
+          />
+        </View>
+
         <View style={styles.filterSection}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             <View style={styles.filterRow}>
@@ -582,6 +724,73 @@ export default function HistoryScreen() {
         </View>
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+function PeriodSummaryCard({
+  title,
+  summary,
+  currency,
+  icon,
+}: {
+  title: string;
+  summary: PeriodSummary;
+  currency: string;
+  icon: keyof typeof Feather.glyphMap;
+}) {
+  const positive = isPositivePeriod(summary.variation);
+
+  return (
+    <View style={styles.periodSummaryCard}>
+      <View style={styles.periodSummaryTop}>
+        <View style={styles.periodSummaryIcon}>
+          <Feather
+            name={icon}
+            size={17}
+            color={positive ? "#86EFAC" : "#FCA5A5"}
+          />
+        </View>
+        <View style={styles.periodSummaryHeaderText}>
+          <Text style={styles.periodSummaryTitle}>{title}</Text>
+          <Text style={styles.periodSummarySubtitle}>{summary.label}</Text>
+        </View>
+      </View>
+      <Text
+        style={[
+          styles.periodSummaryValue,
+          positive ? styles.positiveText : styles.negativeText,
+        ]}
+      >
+        {getPeriodVariationLabel(summary.variation, currency)}
+      </Text>
+      <View style={styles.periodSummaryDetails}>
+        <Text style={styles.periodSummaryDetailText}>
+          {summary.referenceDate
+            ? `Desde ${formatDate(summary.referenceDate)}`
+            : "Necesitas más historial"}
+        </Text>
+        <Text style={styles.periodSummaryDetailText}>
+          {summary.checkInsCount} check-in
+          {summary.checkInsCount === 1 ? "" : "s"} en el periodo
+        </Text>
+      </View>
+      {summary.startAvailable !== null && summary.endAvailable !== null && (
+        <View style={styles.periodAmountsRow}>
+          <View>
+            <Text style={styles.periodAmountLabel}>Inicio</Text>
+            <Text style={styles.periodAmountValue}>
+              {formatMoney(summary.startAvailable, currency)}
+            </Text>
+          </View>
+          <View style={styles.periodAmountRight}>
+            <Text style={styles.periodAmountLabel}>Actual</Text>
+            <Text style={styles.periodAmountValue}>
+              {formatMoney(summary.endAvailable, currency)}
+            </Text>
+          </View>
+        </View>
+      )}
+    </View>
   );
 }
 
@@ -942,6 +1151,133 @@ const styles = StyleSheet.create({
 
   positiveText: {
     color: "#86EFAC",
+  },
+
+  periodSummaryGrid: {
+    gap: 12,
+    marginBottom: 24,
+  },
+
+  periodSummaryCard: {
+    backgroundColor: "#1E293B",
+    borderWidth: 1,
+    borderColor: "#334155",
+    borderRadius: 20,
+    padding: 16,
+  },
+
+  periodSummaryTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 12,
+  },
+
+  periodSummaryIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 12,
+    backgroundColor: "#0F172A",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  periodSummaryHeaderText: {
+    flex: 1,
+  },
+
+  periodSummaryTitle: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "900",
+  },
+
+  periodSummarySubtitle: {
+    color: "#94A3B8",
+    fontSize: 11,
+    fontWeight: "700",
+    marginTop: 2,
+  },
+
+  periodSummaryValue: {
+    fontSize: 26,
+    fontWeight: "900",
+    letterSpacing: -0.5,
+    marginBottom: 10,
+  },
+
+  periodSummaryDetails: {
+    gap: 4,
+    marginBottom: 12,
+  },
+
+  periodSummaryDetailText: {
+    color: "#94A3B8",
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 17,
+  },
+
+  periodAmountsRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 12,
+    backgroundColor: "#0F172A",
+    borderRadius: 14,
+    padding: 12,
+  },
+
+  periodAmountRight: {
+    alignItems: "flex-end",
+  },
+
+  periodAmountLabel: {
+    color: "#64748B",
+    fontSize: 11,
+    fontWeight: "800",
+    marginBottom: 4,
+  },
+
+  periodAmountValue: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "900",
+  },
+
+  periodSection: {
+    marginBottom: 28,
+  },
+
+  periodGrid: {
+    gap: 12,
+  },
+
+  periodCard: {
+    backgroundColor: "#111827",
+    borderWidth: 1,
+    borderColor: "#334155",
+    borderRadius: 20,
+    padding: 16,
+  },
+
+  periodLabel: {
+    color: "#94A3B8",
+    fontSize: 12,
+    fontWeight: "900",
+    marginBottom: 8,
+  },
+
+  periodAmount: {
+    color: "#FFFFFF",
+    fontSize: 18,
+    fontWeight: "900",
+    marginBottom: 6,
+  },
+
+  periodDetail: {
+    color: "#94A3B8",
+    fontSize: 12,
+    lineHeight: 18,
   },
 
   negativeText: {

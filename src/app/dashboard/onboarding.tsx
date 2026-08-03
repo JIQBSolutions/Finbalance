@@ -13,6 +13,11 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { FieldError } from "../../components/FieldError";
+import {
+  formatMoneyInput,
+  parseMoneyInput,
+} from "../../lib/form-formats";
 import { supabase } from "../../lib/supabase";
 
 type WorkspaceType = "personal" | "business";
@@ -48,14 +53,6 @@ function createEmptyAccount(): InitialAccount {
   };
 }
 
-function parseMoney(value: string) {
-  const cleanValue = value.replace(",", ".").trim();
-  const numberValue = Number(cleanValue);
-
-  if (Number.isNaN(numberValue)) return null;
-  return numberValue;
-}
-
 export default function OnboardingScreen() {
   const router = useRouter();
 
@@ -70,10 +67,17 @@ export default function OnboardingScreen() {
     useState<WorkspaceType>("business");
   const [currency, setCurrency] = useState<Currency>("MXN");
   const [currencyDropdownOpen, setCurrencyDropdownOpen] = useState(false);
+  const [workspaceFieldErrors, setWorkspaceFieldErrors] = useState<{
+    name?: string;
+    currency?: string;
+  }>({});
 
   const [accounts, setAccounts] = useState<InitialAccount[]>([
     createEmptyAccount(),
   ]);
+  const [accountFieldErrors, setAccountFieldErrors] = useState<
+    Record<string, { name?: string; balance?: string }>
+  >({});
 
   useEffect(() => {
     async function loadUser() {
@@ -97,7 +101,7 @@ export default function OnboardingScreen() {
 
   const totalInitialBalance = useMemo(() => {
     return accounts.reduce((total, account) => {
-      const value = parseMoney(account.initial_balance);
+      const value = parseMoneyInput(account.initial_balance);
       return total + (value || 0);
     }, 0);
   }, [accounts]);
@@ -112,6 +116,16 @@ export default function OnboardingScreen() {
         account.id === id ? { ...account, [field]: value } : account
       )
     );
+    if (field === "name" || field === "initial_balance") {
+      const errorKey = field === "initial_balance" ? "balance" : "name";
+      setAccountFieldErrors((current) => ({
+        ...current,
+        [id]: {
+          ...current[id],
+          [errorKey]: undefined,
+        },
+      }));
+    }
   };
 
   const addAccount = () => {
@@ -125,30 +139,28 @@ export default function OnboardingScreen() {
     }
 
     setAccounts((prev) => prev.filter((account) => account.id !== id));
+    setAccountFieldErrors((current) => {
+      const nextErrors = { ...current };
+      delete nextErrors[id];
+      return nextErrors;
+    });
   };
 
   const validateWorkspaceStep = () => {
+    const nextErrors: { name?: string; currency?: string } = {};
+
     if (!workspaceName.trim()) {
-      setGlobalError("Ingresa el nombre de tu workspace.");
-      return false;
+      nextErrors.name = "Ingresa el nombre de tu workspace.";
+    } else if (workspaceName.trim().length > 60) {
+      nextErrors.name = "El nombre no puede exceder 60 caracteres.";
     }
 
-    if (workspaceName.trim().length > 60) {
-      setGlobalError("El nombre del workspace no puede exceder 60 caracteres.");
-      return false;
+    if (!currency.trim() || !CURRENCIES.includes(currency as Currency)) {
+      nextErrors.currency = "Selecciona MXN o USD.";
     }
 
-    if (!currency.trim()) {
-      setGlobalError("Selecciona MXN o USD.");
-      return false;
-    }
-
-    if (!CURRENCIES.includes(currency as Currency)) {
-      setGlobalError("Selecciona MXN o USD.");
-      return false;
-    }
-
-    return true;
+    setWorkspaceFieldErrors(nextErrors);
+    return Object.keys(nextErrors).length === 0;
   };
 
   const validateAccountsStep = () => {
@@ -157,38 +169,46 @@ export default function OnboardingScreen() {
       return false;
     }
 
-    for (const account of accounts) {
-      if (!account.name.trim()) {
-        setGlobalError("Todas las cuentas deben tener nombre.");
-        return false;
-      }
-
-      if (account.name.trim().length > 40) {
-        setGlobalError("El nombre de una cuenta es demasiado largo.");
-        return false;
-      }
-
-      const balance = parseMoney(account.initial_balance || "0");
-
-      if (balance === null || balance < 0) {
-        setGlobalError("Todos los saldos deben ser números válidos.");
-        return false;
-      }
-    }
-
+    const nextErrors: Record<
+      string,
+      { name?: string; balance?: string }
+    > = {};
     const normalizedNames = accounts.map((account) =>
       account.name.trim().toLowerCase()
     );
+    const duplicateNames = new Set(
+      normalizedNames.filter(
+        (name, index) => name && normalizedNames.indexOf(name) !== index
+      )
+    );
 
-    const hasDuplicateNames =
-      new Set(normalizedNames).size !== normalizedNames.length;
+    for (const account of accounts) {
+      const currentErrors: { name?: string; balance?: string } = {};
 
-    if (hasDuplicateNames) {
-      setGlobalError("No repitas nombres de cuentas.");
-      return false;
+      if (!account.name.trim()) {
+        currentErrors.name = "Ingresa el nombre de esta cuenta.";
+      } else if (account.name.trim().length > 40) {
+        currentErrors.name = "El nombre no puede exceder 40 caracteres.";
+      } else if (
+        duplicateNames.has(account.name.trim().toLowerCase())
+      ) {
+        currentErrors.name = "Este nombre está repetido.";
+      }
+
+      const balance = parseMoneyInput(account.initial_balance || "0");
+
+      if (balance === null) {
+        currentErrors.balance =
+          "Ingresa un saldo válido. Usa punto sólo para centavos.";
+      }
+
+      if (Object.keys(currentErrors).length > 0) {
+        nextErrors[account.id] = currentErrors;
+      }
     }
 
-    return true;
+    setAccountFieldErrors(nextErrors);
+    return Object.keys(nextErrors).length === 0;
   };
 
   const handleNextStep = () => {
@@ -210,7 +230,8 @@ export default function OnboardingScreen() {
       const formattedAccounts = accounts.map((account) => ({
         name: account.name.trim(),
         account_type: account.account_type,
-        initial_balance: parseMoney(account.initial_balance || "0") || 0,
+        initial_balance:
+          parseMoneyInput(account.initial_balance || "0") || 0,
         currency: currency.trim().toUpperCase(),
       }));
 
@@ -269,7 +290,12 @@ export default function OnboardingScreen() {
       <View style={styles.formGroup}>
         <Text style={styles.label}>Nombre del workspace</Text>
 
-        <View style={styles.inputWrapper}>
+        <View
+          style={[
+            styles.inputWrapper,
+            workspaceFieldErrors.name && styles.inputWrapperError,
+          ]}
+        >
           <Feather
             name="layout"
             size={20}
@@ -286,16 +312,28 @@ export default function OnboardingScreen() {
             }
             placeholderTextColor="#6B7280"
             value={workspaceName}
-            onChangeText={setWorkspaceName}
+            onChangeText={(value) => {
+              setWorkspaceName(value);
+              setWorkspaceFieldErrors((current) => ({
+                ...current,
+                name: undefined,
+              }));
+            }}
             autoCapitalize="words"
           />
         </View>
+        <FieldError message={workspaceFieldErrors.name} />
       </View>
 
       <View style={styles.formGroup}>
         <Text style={styles.label}>Moneda principal</Text>
 
-        <View style={styles.inputWrapper}>
+        <View
+          style={[
+            styles.inputWrapper,
+            workspaceFieldErrors.currency && styles.inputWrapperError,
+          ]}
+        >
           <Feather
             name="dollar-sign"
             size={20}
@@ -327,6 +365,10 @@ export default function OnboardingScreen() {
                   setCurrency(option);
                   setCurrencyDropdownOpen(false);
                   setGlobalError(null);
+                  setWorkspaceFieldErrors((current) => ({
+                    ...current,
+                    currency: undefined,
+                  }));
                 }}
                 activeOpacity={0.8}
               >
@@ -335,6 +377,7 @@ export default function OnboardingScreen() {
             ))}
           </View>
         )}
+        <FieldError message={workspaceFieldErrors.currency} />
       </View>
 
       <TouchableOpacity style={styles.primaryButton} onPress={handleNextStep}>
@@ -426,7 +469,13 @@ export default function OnboardingScreen() {
             <View style={styles.formGroup}>
               <Text style={styles.label}>Nombre de la cuenta</Text>
 
-              <View style={styles.inputWrapper}>
+              <View
+                style={[
+                  styles.inputWrapper,
+                  accountFieldErrors[account.id]?.name &&
+                    styles.inputWrapperError,
+                ]}
+              >
                 <Feather
                   name="edit-2"
                   size={20}
@@ -445,12 +494,21 @@ export default function OnboardingScreen() {
                   autoCapitalize="words"
                 />
               </View>
+              <FieldError
+                message={accountFieldErrors[account.id]?.name}
+              />
             </View>
 
             <View style={styles.formGroup}>
               <Text style={styles.label}>Saldo inicial</Text>
 
-              <View style={styles.inputWrapper}>
+              <View
+                style={[
+                  styles.inputWrapper,
+                  accountFieldErrors[account.id]?.balance &&
+                    styles.inputWrapperError,
+                ]}
+              >
                 <Text style={styles.currencyPrefix}>$</Text>
 
                 <TextInput
@@ -459,11 +517,18 @@ export default function OnboardingScreen() {
                   placeholderTextColor="#6B7280"
                   value={account.initial_balance}
                   onChangeText={(text) =>
-                    updateAccount(account.id, "initial_balance", text)
+                    updateAccount(
+                      account.id,
+                      "initial_balance",
+                      formatMoneyInput(text)
+                    )
                   }
                   keyboardType="decimal-pad"
                 />
               </View>
+              <FieldError
+                message={accountFieldErrors[account.id]?.balance}
+              />
             </View>
           </View>
         ))}
@@ -660,6 +725,11 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 16,
     height: 56,
+  },
+
+  inputWrapperError: {
+    borderColor: "#EF4444",
+    borderWidth: 1.5,
   },
 
   inputIcon: {

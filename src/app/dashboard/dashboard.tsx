@@ -13,6 +13,10 @@ import {
   View,
 } from "react-native";
 import { FinbalanceLogo } from "../../components/FinbalanceLogo";
+import {
+  BusinessTransaction,
+  listRecentBusinessTransactions,
+} from "../../lib/business-transactions";
 import { supabase } from "../../lib/supabase";
 import { getCurrentWorkspace } from "../../lib/workspaces";
 
@@ -358,6 +362,9 @@ export default function DashboardScreen() {
 
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [accounts, setAccounts] = useState<AccountBalance[]>([]);
+  const [recentTransactions, setRecentTransactions] = useState<
+    BusinessTransaction[]
+  >([]);
   const [lastCheckIn, setLastCheckIn] = useState<LastCheckIn | null>(null);
   const [dashboardTrends, setDashboardTrends] = useState<DashboardTrends>(
     EMPTY_DASHBOARD_TRENDS
@@ -469,6 +476,20 @@ export default function DashboardScreen() {
         return;
       }
       setWorkspace(currentWorkspace);
+
+      if (currentWorkspace.workspace_type === "business") {
+        try {
+          const recent = await listRecentBusinessTransactions(
+            currentWorkspace.id,
+            4
+          );
+          setRecentTransactions(recent);
+        } catch {
+          setRecentTransactions([]);
+        }
+      } else {
+        setRecentTransactions([]);
+      }
 
       const { data: balances, error: balancesError } = await supabase
         .from("latest_account_balances")
@@ -818,8 +839,55 @@ export default function DashboardScreen() {
               icon="calendar"
               onPress={() => router.push("/finances/history")}
               />
+
+            {workspace?.workspace_type === "business" && (
+              <QuickAction
+                label="Ingresos y gastos"
+                icon="list"
+                onPress={() => router.push("/finances/transactions" as any)}
+              />
+            )}
           </View>
         </View>
+
+        {workspace?.workspace_type === "business" && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeaderRow}>
+              <View style={styles.sectionHeaderText}>
+                <Text style={styles.sectionTitle}>Movimientos recientes</Text>
+                <Text style={styles.sectionHint}>
+                  Ingresos y gastos capturados manualmente.
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => router.push("/finances/transactions" as any)}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.viewAllLink}>Ver todos</Text>
+              </TouchableOpacity>
+            </View>
+
+            {recentTransactions.length > 0 ? (
+              <View style={styles.recentTransactionsCard}>
+                {recentTransactions.map((transaction, index) => (
+                  <RecentTransactionRow
+                    key={transaction.id}
+                    transaction={transaction}
+                    currency={currency}
+                    last={index === recentTransactions.length - 1}
+                    onPress={() =>
+                      router.push(
+                        `/finances/transaction/${transaction.id}` as any
+                      )
+                    }
+                  />
+                ))}
+              </View>
+            ) : (
+              <EmptyState text="Aún no hay ingresos o gastos manuales. Usa la acción de arriba para registrar el primero." />
+            )}
+          </View>
+        )}
 
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
@@ -1082,6 +1150,60 @@ function AccountRow({
         {formatMoney(Number(account.balance || 0), currency)}
       </Text>
     </View>
+  );
+}
+
+function RecentTransactionRow({
+  transaction,
+  currency,
+  last,
+  onPress,
+}: {
+  transaction: BusinessTransaction;
+  currency: string;
+  last: boolean;
+  onPress: () => void;
+}) {
+  const isIncome = transaction.transaction_type === "income";
+
+  return (
+    <TouchableOpacity
+      style={[styles.recentTransactionRow, !last && styles.recentTransactionBorder]}
+      onPress={onPress}
+      activeOpacity={0.85}
+    >
+      <View
+        style={[
+          styles.recentTransactionIcon,
+          isIncome
+            ? styles.recentTransactionIncomeIcon
+            : styles.recentTransactionExpenseIcon,
+        ]}
+      >
+        <Feather
+          name={isIncome ? "arrow-down-left" : "arrow-up-right"}
+          size={16}
+          color={isIncome ? "#86EFAC" : "#FCA5A5"}
+        />
+      </View>
+      <View style={styles.recentTransactionInfo}>
+        <Text style={styles.recentTransactionTitle} numberOfLines={1}>
+          {transaction.description}
+        </Text>
+        <Text style={styles.recentTransactionMeta} numberOfLines={1}>
+          {formatDate(transaction.transaction_date)} · {transaction.account_name}
+        </Text>
+      </View>
+      <Text
+        style={[
+          styles.recentTransactionAmount,
+          isIncome ? styles.recentIncomeText : styles.recentExpenseText,
+        ]}
+      >
+        {isIncome ? "+" : "−"}
+        {formatMoney(transaction.amount, currency)}
+      </Text>
+    </TouchableOpacity>
   );
 }
 
@@ -1589,6 +1711,92 @@ const styles = StyleSheet.create({
 
   quickActionTextPrimary: {
     color: "#FFFFFF",
+  },
+
+  sectionHeaderRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 12,
+    marginBottom: 14,
+  },
+
+  sectionHeaderText: {
+    flex: 1,
+  },
+
+  viewAllLink: {
+    color: "#5EEAD4",
+    fontSize: 12,
+    fontWeight: "900",
+    paddingVertical: 3,
+  },
+
+  recentTransactionsCard: {
+    backgroundColor: "#1E293B",
+    borderWidth: 1,
+    borderColor: "#334155",
+    borderRadius: 20,
+    paddingHorizontal: 14,
+  },
+
+  recentTransactionRow: {
+    minHeight: 72,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 12,
+  },
+
+  recentTransactionBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(51,65,85,0.75)",
+  },
+
+  recentTransactionIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  recentTransactionIncomeIcon: {
+    backgroundColor: "rgba(34,197,94,0.12)",
+  },
+
+  recentTransactionExpenseIcon: {
+    backgroundColor: "rgba(248,113,113,0.12)",
+  },
+
+  recentTransactionInfo: {
+    flex: 1,
+    minWidth: 0,
+  },
+
+  recentTransactionTitle: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "900",
+  },
+
+  recentTransactionMeta: {
+    color: "#64748B",
+    fontSize: 10,
+    marginTop: 4,
+  },
+
+  recentTransactionAmount: {
+    fontSize: 12,
+    fontWeight: "900",
+  },
+
+  recentIncomeText: {
+    color: "#86EFAC",
+  },
+
+  recentExpenseText: {
+    color: "#FCA5A5",
   },
 
   accountRow: {
